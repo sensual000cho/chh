@@ -1,0 +1,24 @@
+# 의존성 / 빌드 결과물
+node_modules/
+dist/
+release/
+out/
+
+# Electron 런타임 (배포 패키지)
+*.exe
+*.dll
+*.pak
+*.dat
+*.bin
+*.zip
+locales/
+resources/
+vk_swiftshader_icd.json
+LICENSE.electron.txt
+LICENSES.chromium.html
+
+# 환경 / 로그 / OS
+.env
+*.log
+.DS_Store
+Thumbs.db
