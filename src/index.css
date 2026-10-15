@@ -18,3 +18,108 @@ body,
 .chh-recent-item .dropdown-menu-item__shortcut {
   white-space: nowrap;
 }
+
+/* ---- 앱 레이아웃 + 제목 표시줄 ---- */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.app-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.titlebar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  flex: none;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2c2c2c;
+  color: #d4d4d4;
+  font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
+  user-select: none;
+}
+.tb-drag {
+  -webkit-app-region: drag;
+  height: 100%;
+}
+.tb-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  min-width: 0;
+}
+.tb-logo {
+  font-weight: 700;
+  color: #4dabf7;
+  letter-spacing: 0.5px;
+}
+.tb-name {
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40vw;
+}
+.tb-spacer {
+  flex: 1;
+}
+.tb-group {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 2px;
+  padding: 0 6px;
+  -webkit-app-region: no-drag;
+}
+.tb-win {
+  padding: 0;
+  gap: 0;
+}
+.tb-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: #333;
+}
+.tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.tb-btn:hover { background: #2e2e2e; }
+.tb-btn.active { background: #25334a; color: #74b9ff; }
+.tb-win .tb-btn {
+  height: 36px;
+  width: 46px;
+  justify-content: center;
+  border-radius: 0;
+}
+.tb-win .tb-btn.danger:hover { background: #e03131; color: #fff; }
+.tb-pop-wrap { position: relative; }
+.tb-pop {
+  position: absolute;
+  top: 32px;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #232329;
+  border: 1px solid #3a3a42;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.tb-pop span { width: 36px; text-align: right; font-size: 12px; opacity: 0.8; }

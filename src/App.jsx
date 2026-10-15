@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw, MainMenu, loadFromBlob, serializeAsJSON } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  MainMenu,
+  convertToExcalidrawElements,
+  loadFromBlob,
+  serializeAsJSON,
+} from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
+import TitleBar from "./TitleBar.jsx";
 import { addRecent, clearRecent, formatWhen, loadRecent, removeRecent } from "./recentFiles.js";
 
 // Electron preload 가 노출하는 window.chh API (electron/preload.cjs) 는
@@ -94,6 +101,36 @@ export default function App() {
     return chh.onOpenPath(openPath);
   }, [api, openPath]);
 
+  // 화면 캡처 결과를 현재 화면 가운데에 이미지로 붙인다.
+  useEffect(() => {
+    if (!api || !chh) return;
+    const offCapture = chh.onCaptureResult(({ dataURL, scale }) => {
+      const img = new Image();
+      img.onload = () => {
+        const s = api.getAppState();
+        const w = img.naturalWidth / (scale || 1);
+        const h = img.naturalHeight / (scale || 1);
+        const fileId = `cap_${Date.now()}`;
+        api.addFiles([{ id: fileId, dataURL, mimeType: "image/png", created: Date.now() }]);
+        const cx = -s.scrollX + s.width / 2 / s.zoom.value;
+        const cy = -s.scrollY + s.height / 2 / s.zoom.value;
+        const [el] = convertToExcalidrawElements([
+          { type: "image", fileId, status: "saved", x: cx - w / 2, y: cy - h / 2, width: w, height: h },
+        ]);
+        api.updateScene({
+          elements: [...api.getSceneElements(), el],
+          appState: { selectedElementIds: { [el.id]: true } },
+        });
+      };
+      img.src = dataURL;
+    });
+    const offToast = chh.onToast((message) => api.setToast({ message }));
+    return () => {
+      offCapture();
+      offToast();
+    };
+  }, [api]);
+
   // 단축키: Esc = 메인 메뉴 열기/닫기, Ctrl+N/O/S, Ctrl+Shift+S
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -141,7 +178,14 @@ export default function App() {
   }, [newBoard, openDialog, save]);
 
   return (
-    <div style={{ height: "100%" }}>
+    <div className="app">
+      <TitleBar
+        name={filePath ? filePath.split(/[\\/]/).pop() : "새 보드"}
+        onOpen={openDialog}
+        onSave={() => save(false)}
+        onCapture={() => chh.startCapture()}
+      />
+      <div className="app-body">
       <Excalidraw excalidrawAPI={setApi} theme="dark" langCode="ko-KR">
         <MainMenu>
           {chh ? (
@@ -200,6 +244,7 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
+      </div>
     </div>
   );
 }
