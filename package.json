@@ -6,6 +6,24 @@
   "main": "electron/main.cjs",
   "type": "module",
   "author": "CHH",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "cross-env CHH_DEV=1 electron ."
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "38.8.6",
+    "vite": "^8.3.4"
+  },
   "allowScripts": {
     "electron@38.8.6": true,
     "esbuild@0.28.2": true,
