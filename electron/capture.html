@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+<title>CHH 캡처</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; cursor: crosshair; user-select: none; background: #000; }
+  #shot { position: fixed; inset: 0; width: 100vw; height: 100vh; }
+  #dim { position: fixed; inset: 0; background: rgba(0,0,0,.45); }
+  #sel {
+    position: fixed; display: none; outline: 1px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.6), 0 0 0 99999px rgba(0,0,0,.45);
+    background-repeat: no-repeat;
+  }
+  #size {
+    position: fixed; display: none; padding: 2px 6px; font: 12px/1.4 "Segoe UI", sans-serif;
+    color: #fff; background: rgba(0,0,0,.75); border-radius: 3px; pointer-events: none;
+  }
+  #hint {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%);
+    padding: 8px 14px; font: 13px/1.4 "Segoe UI", "Malgun Gothic", sans-serif;
+    color: #fff; background: rgba(0,0,0,.7); border-radius: 6px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<img id="shot" alt="" />
+<div id="dim"></div>
+<div id="sel"></div>
+<div id="size"></div>
+<div id="hint">드래그해서 캡처할 영역을 선택하세요 · Esc 또는 우클릭으로 취소</div>
+<script>
+  const id = new URLSearchParams(location.search).get("id");
+  const shot = document.getElementById("shot");
+  const dim = document.getElementById("dim");
+  const sel = document.getElementById("sel");
+  const size = document.getElementById("size");
+  const hint = document.getElementById("hint");
+  let start = null, rect = null, shotURL = "";
+
+  window.cap.getShot(id).then((url) => {
+    shotURL = url || "";
+    shot.src = shotURL;
+  });
+
+  function update(e) {
+    const x = Math.min(start.x, e.clientX), y = Math.min(start.y, e.clientY);
+    const w = Math.abs(e.clientX - start.x), h = Math.abs(e.clientY - start.y);
+    rect = { x, y, width: w, height: h };
+    Object.assign(sel.style, {
+      display: "block", left: x + "px", top: y + "px", width: w + "px", height: h + "px",
+    });
+    size.style.display = "block";
+    size.textContent = `${Math.round(w * devicePixelRatio)} × ${Math.round(h * devicePixelRatio)}`;
+    size.style.left = x + "px";
+    size.style.top = Math.max(0, y - 24) + "px";
+  }
+
+  window.addEventListener("mousedown", (e) => {
+    if (e.button === 2) return window.cap.cancel();
+    if (e.button !== 0) return;
+    start = { x: e.clientX, y: e.clientY };
+    dim.style.display = "none";
+    hint.style.display = "none";
+    update(e);
+  });
+  window.addEventListener("mousemove", (e) => start && update(e));
+  window.addEventListener("mouseup", (e) => {
+    if (!start || e.button !== 0) return;
+    update(e);
+    start = null;
+    window.cap.done(id, rect);
+  });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") window.cap.cancel(); });
+  window.addEventListener("contextmenu", (e) => e.preventDefault());
+</script>
+</body>
+</html>
