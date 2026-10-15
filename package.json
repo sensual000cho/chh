@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "cross-env CHH_DEV=1 electron .",
-    "dist": "npm run build && electron-builder --win portable && node scripts/publish.mjs"
+    "dist": "npm run build && electron-builder --win portable && node scripts/publish.mjs",
+    "gen:dark-css": "node scripts/gen-dark-css.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
@@ -24,6 +25,7 @@
     "cross-env": "^7.0.3",
     "electron": "38.8.6",
     "electron-builder": "^26.15.3",
+    "postcss": "^8.5.30",
     "vite": "^8.3.4"
   },
   "allowScripts": {

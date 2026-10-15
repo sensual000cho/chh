@@ -5,11 +5,25 @@ import {
   convertToExcalidrawElements,
   loadFromBlob,
   serializeAsJSON,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
+import "./excalidraw-dark.css"; // 라이트 테마(필터 없음) 위에 다크 UI 팔레트를 입힌다 (npm run gen:dark-css)
 import TitleBar from "./TitleBar.jsx";
 import ColorWheel from "./ColorWheel.jsx";
-import { BG_PRESETS, toDisplay, toStored } from "./color.js";
+import PixelLayer from "./pixel/PixelLayer.jsx";
+import PixelDialog from "./pixel/PixelDialog.jsx";
+import { createBoard } from "./pixel/board.js";
+import {
+  collectImages,
+  fileMime,
+  insertImages,
+  isImageFile,
+  pickDropped,
+  readAsDataURL,
+  viewCenter,
+} from "./images.js";
+import { BG_PRESETS } from "./color.js";
 import { addRecent, clearRecent, formatWhen, loadRecent, removeRecent } from "./recentFiles.js";
 
 // Electron preload 가 노출하는 window.chh API (electron/preload.cjs) 는
@@ -17,6 +31,7 @@ import { addRecent, clearRecent, formatWhen, loadRecent, removeRecent } from "./
 const chh = window.chh;
 
 const BG_KEY = "chh.bg";
+const DEFAULT_STROKE = "#e6e6e6"; // 어두운 배경에서 잘 보이는 기본 선/글자 색
 function loadBg() {
   try {
     const v = localStorage.getItem(BG_KEY);
@@ -32,20 +47,28 @@ export default function App() {
   const [initialBg] = useState(loadBg);
   const [bg, setBg] = useState(initialBg); // 화면에 보이는 캔버스 배경색
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
+  const [pixelDialog, setPixelDialog] = useState(false);
+  const [autoEdit, setAutoEdit] = useState(null);
+  const uiHiddenRef = useRef(false);
+  uiHiddenRef.current = uiHidden;
+  const pixelDialogRef = useRef(false);
+  pixelDialogRef.current = pixelDialog;
+  const bodyRef = useRef(null);
+  const fileInputRef = useRef(null);
   const apiRef = useRef(null);
   apiRef.current = api;
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
-  const appliedStored = useRef(toStored(initialBg)); // 마지막으로 우리가 적용한 viewBackgroundColor(저장값)
+  const appliedStored = useRef(initialBg); // 마지막으로 우리가 적용한 viewBackgroundColor
 
-  const applyBg = useCallback((display) => {
-    const stored = toStored(display);
-    appliedStored.current = stored;
-    setBg(display);
+  const applyBg = useCallback((color) => {
+    appliedStored.current = color;
+    setBg(color);
     try {
-      localStorage.setItem(BG_KEY, display);
+      localStorage.setItem(BG_KEY, color);
     } catch {}
-    apiRef.current?.updateScene({ appState: { viewBackgroundColor: stored } });
+    apiRef.current?.updateScene({ appState: { viewBackgroundColor: color } });
   }, []);
 
   // 파일 열기 등 바깥에서 배경이 바뀌면 선택 표시를 맞춘다
@@ -57,7 +80,7 @@ export default function App() {
     lastSeenStored.current = stored;
     if (changed && stored !== appliedStored.current) {
       appliedStored.current = stored;
-      setBg(toDisplay(stored));
+      setBg(stored);
     }
   }, []);
 
@@ -143,10 +166,86 @@ export default function App() {
     apiRef.current?.resetScene();
     apiRef.current?.history.clear();
     apiRef.current?.updateScene({
-      appState: { viewBackgroundColor: appliedStored.current },
+      appState: { viewBackgroundColor: appliedStored.current, currentItemStrokeColor: DEFAULT_STROKE },
     });
     setFilePath(null);
   }, []);
+
+  // ---- 이미지 가져오기 ----
+  const importPicked = useCallback(async (fileList) => {
+    const files = [...fileList].filter(isImageFile);
+    if (!files.length || !apiRef.current) return;
+    const sources = [];
+    for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
+    insertImages(apiRef.current, sources, viewCenter(apiRef.current), "center");
+  }, []);
+
+  const exportReferenceImages = useCallback(async () => {
+    const api = apiRef.current;
+    if (!api || !chh) return;
+    const images = collectImages(api);
+    if (!images.length) {
+      api.setToast({ message: "저장할 레퍼런스 이미지가 없습니다." });
+      return;
+    }
+    const res = await chh.exportImages(images);
+    if (res) api.setToast({ message: `${res.count}장을 저장했습니다.`, duration: 2500 });
+  }, []);
+
+  const createPixel = useCallback((w, h) => {
+    const api = apiRef.current;
+    if (!api) return;
+    const el = createBoard(api, w, h);
+    setPixelDialog(false);
+    setAutoEdit({ id: el.id });
+  }, []);
+
+  // 파일/웹 이미지 끌어다 놓기 (.chh 파일은 보드로 열기)
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || !api) return;
+    const types = (dt) => [...(dt?.types || [])];
+    const onOver = (e) => {
+      const t = types(e.dataTransfer);
+      if (t.includes("Files") || t.includes("text/uri-list") || t.includes("text/html")) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+      }
+    };
+    const onDrop = async (e) => {
+      const dt = e.dataTransfer;
+      const board = [...(dt.files || [])].find((f) => /\.chh$/i.test(f.name));
+      if (board && chh) {
+        e.preventDefault();
+        e.stopPropagation();
+        const p = chh.pathForFile(board);
+        if (p) openPath(p);
+        return;
+      }
+      const { files, urls } = pickDropped(dt);
+      if (!files.length && !urls.length) return; // 그 밖의 드롭은 Excalidraw 기본 처리
+      e.preventDefault();
+      e.stopPropagation();
+      const at = viewportCoordsToSceneCoords({ clientX: e.clientX, clientY: e.clientY }, api.getAppState());
+      const sources = [];
+      for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
+      for (const u of urls) {
+        if (u.startsWith("data:")) sources.push({ dataURL: u });
+        else if (chh) {
+          const r = await chh.fetchImage(u);
+          if (r?.dataURL) sources.push({ dataURL: r.dataURL });
+          else api.setToast({ message: `이미지를 가져오지 못했습니다: ${r?.error || ""}` });
+        }
+      }
+      if (sources.length) insertImages(api, sources, at, "corner");
+    };
+    el.addEventListener("dragover", onOver, true);
+    el.addEventListener("drop", onDrop, true);
+    return () => {
+      el.removeEventListener("dragover", onOver, true);
+      el.removeEventListener("drop", onDrop, true);
+    };
+  }, [api, openPath]);
 
   // 실행 인자 / 이미 실행 중일 때 더블클릭한 .chh 파일 열기
   useEffect(() => {
@@ -191,7 +290,29 @@ export default function App() {
       const api = apiRef.current;
       if (!api) return;
 
+      const typingNow =
+        e.target instanceof HTMLElement &&
+        (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+
+      // Tab: 모든 UI 켜기/끄기
+      if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey && !typingNow && !pixelDialogRef.current) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (!uiHiddenRef.current) api.setToast({ message: "Tab 키로 UI를 다시 표시합니다", duration: 1500 });
+        setUiHidden((v) => !v);
+        return;
+      }
+
+      // 픽셀 그리기 중의 Esc 는 PixelLayer 가 처리한다
+      if (e.key === "Escape" && document.body.classList.contains("px-editing")) return;
+
       if (e.key === "Escape") {
+        if (uiHiddenRef.current) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setUiHidden(false);
+          return;
+        }
         if (pickerOpenRef.current) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -238,19 +359,21 @@ export default function App() {
   }, [newBoard, openDialog, save]);
 
   return (
-    <div className="app">
+    <div className={`app chh-dark${uiHidden ? " ui-hidden" : ""}`}>
       <TitleBar
         name={filePath ? filePath.split(/[\\/]/).pop() : "새 보드"}
         onOpen={openDialog}
         onSave={() => save(false)}
         onCapture={() => chh.startCapture()}
+        onImport={() => fileInputRef.current?.click()}
+        onNewPixel={() => setPixelDialog(true)}
       />
-      <div className="app-body">
+      <div className="app-body" ref={bodyRef}>
       <Excalidraw
         excalidrawAPI={setApi}
         onChange={onSceneChange}
-        initialData={{ appState: { viewBackgroundColor: toStored(initialBg) } }}
-        theme="dark"
+        initialData={{ appState: { viewBackgroundColor: initialBg, currentItemStrokeColor: DEFAULT_STROKE } }}
+        theme="light"
         langCode="ko-KR"
       >
         <MainMenu>
@@ -271,6 +394,11 @@ export default function App() {
             </>
           ) : (
             <MainMenu.DefaultItems.LoadScene />
+          )}
+          <MainMenu.Item onSelect={() => fileInputRef.current?.click()}>이미지 가져오기</MainMenu.Item>
+          <MainMenu.Item onSelect={() => setPixelDialog(true)}>새 픽셀판</MainMenu.Item>
+          {chh && (
+            <MainMenu.Item onSelect={exportReferenceImages}>레퍼런스 이미지 폴더로 저장</MainMenu.Item>
           )}
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.Separator />
@@ -329,6 +457,24 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
+      <PixelLayer
+        api={api}
+        hidden={uiHidden}
+        autoEdit={autoEdit}
+        onAutoEditDone={() => setAutoEdit(null)}
+      />
+      {pixelDialog && <PixelDialog onCreate={createPixel} onClose={() => setPixelDialog(false)} />}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => {
+          importPicked(e.target.files);
+          e.target.value = "";
+        }}
+      />
       {pickerOpen && (
         <div className="bgpanel">
           <ColorWheel value={bg} onChange={applyBg} />

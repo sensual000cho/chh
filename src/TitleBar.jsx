@@ -10,6 +10,8 @@ const icons = {
   open: svg(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />),
   save: svg(<><path d="M5 3h11l4 4v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M8 3v5h7V3M8 21v-7h8v7" /></>),
   capture: svg(<><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" /><circle cx="12" cy="12" r="3" /></>),
+  image: svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 9" /></>),
+  pixel: svg(<><rect x="4" y="4" width="16" height="16" rx="1" /><path d="M4 12h16M12 4v16M8 4v16M16 4v16M4 8h16M4 16h16" strokeWidth="1" /></>),
   pin: svg(<><path d="M9 4h6l-1 6 3 3H7l3-3z" /><path d="M12 13v8" /></>),
   opacity: svg(<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />),
   min: svg(<path d="M5 12h14" />),
@@ -31,7 +33,7 @@ function Btn({ title, onClick, active, danger, children, label }) {
   );
 }
 
-export default function TitleBar({ name, dirty, onOpen, onSave, onCapture }) {
+export default function TitleBar({ name, dirty, onOpen, onSave, onCapture, onImport, onNewPixel }) {
   const chh = window.chh;
   const [maximized, setMaximized] = useState(false);
   const [onTop, setOnTop] = useState(() => localStorage.getItem("chh.onTop") === "1");
@@ -78,6 +80,8 @@ export default function TitleBar({ name, dirty, onOpen, onSave, onCapture }) {
         <Btn title="저장 (Ctrl+S)" onClick={onSave}>{icons.save}</Btn>
         <span className="tb-sep" />
         <Btn title="화면 캡처 (Ctrl+Shift+X)" onClick={onCapture} label="캡처">{icons.capture}</Btn>
+        <Btn title="이미지 가져오기 (파일 선택 · 끌어다 놓기 · 붙여넣기)" onClick={onImport} label="이미지">{icons.image}</Btn>
+        <Btn title="새 픽셀판 만들기" onClick={onNewPixel} label="픽셀판">{icons.pixel}</Btn>
         <span className="tb-sep" />
         <Btn title={onTop ? "항상 위 끄기" : "항상 위"} active={onTop} onClick={() => setOnTop((v) => !v)}>
           {icons.pin}

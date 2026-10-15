@@ -240,6 +240,28 @@ ipcMain.handle("file:export-images", async (_e, images) => {
   return { dir, count };
 });
 
+// 픽셀판 등 단일 PNG 내보내기 (투명 배경 유지)
+ipcMain.handle("file:save-image", async (_e, { defaultName, dataURL }) => {
+  // 개발 테스트: CHH_TEST_SAVE=폴더 → 대화상자 없이 그 폴더에 저장
+  const res = process.env.CHH_TEST_SAVE
+    ? { filePath: path.join(process.env.CHH_TEST_SAVE, defaultName || "image.png") }
+    : await dialog.showSaveDialog(mainWindow, {
+        title: "이미지 내보내기",
+        defaultPath: path.join(app.getPath("pictures"), defaultName || "image.png"),
+        filters: [{ name: "PNG 이미지", extensions: ["png"] }],
+      });
+  if (res.canceled || !res.filePath) return null;
+  const m = /^data:image\/png;base64,(.*)$/s.exec(dataURL || "");
+  if (!m) return { error: "PNG 데이터가 아닙니다" };
+  try {
+    fs.writeFileSync(res.filePath, Buffer.from(m[1], "base64"));
+    if (!process.env.CHH_TEST_SAVE) shell.showItemInFolder(res.filePath);
+    return { path: res.filePath };
+  } catch (err) {
+    return { error: String(err.message || err) };
+  }
+});
+
 // 웹에서 끌어온 이미지 URL을 받아오기 (렌더러에서는 CORS로 막힐 수 있음)
 ipcMain.handle("net:fetch-image", async (_e, url) => {
   try {

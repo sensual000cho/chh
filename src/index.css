@@ -181,7 +181,169 @@ body,
   font: 14px "Segoe UI", sans-serif;
 }
 
-/* 다크 테마 캔버스 필터를 100% 반전으로: 배경이 순수 검정~흰색까지 표현되게 한다 (color.js INV 와 맞춰야 함) */
-.app .excalidraw.theme--dark {
-  --theme-filter: invert(100%) hue-rotate(180deg);
+
+/* ---- Tab: 모든 UI 숨기기 ---- */
+.ui-hidden .titlebar,
+.ui-hidden .layer-ui__wrapper,
+.ui-hidden .bgpanel,
+.ui-hidden .pxpanel {
+  display: none !important;
+}
+
+/* ---- 픽셀판 ---- */
+.px-overlay {
+  position: fixed;
+  z-index: 3; /* Excalidraw 캔버스(2) 위, Excalidraw UI(4) 아래 */
+  transform-origin: center;
+}
+.px-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  touch-action: none;
+  outline: 1px solid rgba(0, 0, 0, 0.5);
+}
+.px-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(0, 0, 0, 0.28) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 1px, transparent 1px);
+}
+.px-hover {
+  position: fixed;
+  z-index: 60;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(20, 20, 24, 0.92);
+  border: 1px solid #44444c;
+  color: #e6e6ea;
+  font: 12px "Segoe UI", "Malgun Gothic", sans-serif;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.pxpanel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: fit-content; /* transform 없이 가운데 정렬 (자식의 fixed 가 화면 기준이 되도록) */
+  margin: 0 auto;
+  bottom: 72px;
+  z-index: 20;
+  max-width: calc(100vw - 24px);
+  user-select: none;
+}
+.px-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: #232329;
+  border: 1px solid #3a3a42;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  color: #d4d4d8;
+  font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.px-info { font-weight: 600; margin-right: 4px; white-space: nowrap; }
+.px-sep { width: 1px; height: 18px; margin: 0 4px; background: #3e3e46; }
+.px-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #2f2f37;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.px-btn:hover:not(:disabled) { background: #3b3b45; }
+.px-btn.on { background: #403e6a; border-color: #a8a5ff; color: #fff; }
+.px-btn.primary { background: #4a47a3; color: #fff; }
+.px-btn.primary:hover { background: #5855bd; }
+.px-btn:disabled { opacity: 0.4; cursor: default; }
+.px-field { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.px-field input[type="range"] { width: 90px; }
+.px-field select {
+  height: 26px;
+  background: #2f2f37;
+  color: inherit;
+  border: 1px solid #44444c;
+  border-radius: 5px;
+}
+.px-field b { width: 18px; text-align: right; font-weight: 600; }
+.px-dim { opacity: 0.6; font-size: 12px; }
+.px-color,
+.px-chip {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+}
+.px-color { width: 30px; height: 28px; border-radius: 6px; }
+.px-color.on, .px-chip.on { outline: 2px solid #a8a5ff; outline-offset: 1px; }
+.px-chip:hover { transform: scale(1.12); }
+.px-colorpop {
+  position: fixed; /* 가운데의 판을 가리지 않도록 화면 오른쪽에 둔다 */
+  right: 24px;
+  bottom: 150px;
+  padding: 12px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+}
+.px-palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 10px; }
+.px-palette .px-chip { width: 100%; height: 26px; }
+
+/* 새 픽셀판 창 */
+.pxdlg-back {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.pxdlg {
+  width: 380px;
+  padding: 18px 20px;
+  background: #232329;
+  border: 1px solid #3a3a42;
+  border-radius: 12px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6);
+  color: #e0e0e4;
+  font: 14px "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.pxdlg h3 { margin: 0 0 4px; font-size: 16px; }
+.pxdlg-hint { margin: 0 0 14px; font-size: 12px; opacity: 0.6; }
+.pxdlg-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.pxdlg-size { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 18px; }
+.pxdlg-size label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; opacity: 0.85; }
+.pxdlg-size input {
+  width: 90px;
+  height: 32px;
+  padding: 0 8px;
+  background: #121212;
+  color: #fff;
+  border: 1px solid #44444c;
+  border-radius: 6px;
+  font: 15px "Segoe UI", sans-serif;
+}
+.pxdlg-size > span { padding-bottom: 7px; }
+.pxdlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 픽셀판 선택 중에는 이미지 자르기 안내를 숨긴다 */
+body.px-board-selected .HintViewer {
+  display: none;
 }
