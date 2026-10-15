@@ -8,18 +8,69 @@ import {
 } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import TitleBar from "./TitleBar.jsx";
+import ColorWheel from "./ColorWheel.jsx";
+import { BG_PRESETS, toDisplay, toStored } from "./color.js";
 import { addRecent, clearRecent, formatWhen, loadRecent, removeRecent } from "./recentFiles.js";
 
 // Electron preload 가 노출하는 window.chh API (electron/preload.cjs) 는
 // 브라우저(npm run dev)에서는 없으므로 항상 optional 로 접근한다.
 const chh = window.chh;
 
+const BG_KEY = "chh.bg";
+function loadBg() {
+  try {
+    const v = localStorage.getItem(BG_KEY);
+    if (v && /^#[0-9a-f]{6}$/i.test(v)) return v;
+  } catch {}
+  return BG_PRESETS[1].color;
+}
+
 export default function App() {
   const [api, setApi] = useState(null);
   const [filePath, setFilePath] = useState(null);
   const [recent, setRecent] = useState(loadRecent);
+  const [initialBg] = useState(loadBg);
+  const [bg, setBg] = useState(initialBg); // 화면에 보이는 캔버스 배경색
+  const [pickerOpen, setPickerOpen] = useState(false);
   const apiRef = useRef(null);
   apiRef.current = api;
+  const pickerOpenRef = useRef(false);
+  pickerOpenRef.current = pickerOpen;
+  const appliedStored = useRef(toStored(initialBg)); // 마지막으로 우리가 적용한 viewBackgroundColor(저장값)
+
+  const applyBg = useCallback((display) => {
+    const stored = toStored(display);
+    appliedStored.current = stored;
+    setBg(display);
+    try {
+      localStorage.setItem(BG_KEY, display);
+    } catch {}
+    apiRef.current?.updateScene({ appState: { viewBackgroundColor: stored } });
+  }, []);
+
+  // 파일 열기 등 바깥에서 배경이 바뀌면 선택 표시를 맞춘다
+  // (적용 직후 이전 상태로 한 번 더 알림이 올 수 있어서, 직전에 본 값과 같으면 무시한다)
+  const lastSeenStored = useRef(null);
+  const onSceneChange = useCallback((_els, appState) => {
+    const stored = appState.viewBackgroundColor;
+    const changed = stored !== lastSeenStored.current;
+    lastSeenStored.current = stored;
+    if (changed && stored !== appliedStored.current) {
+      appliedStored.current = stored;
+      setBg(toDisplay(stored));
+    }
+  }, []);
+
+  // 색상 선택 창 바깥을 누르면 닫는다
+  useEffect(() => {
+    if (!pickerOpen) return;
+    const close = (e) => {
+      if (e.target.closest(".bgpanel, .bg-custom")) return;
+      setPickerOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [pickerOpen]);
 
   useEffect(() => {
     const name = filePath ? filePath.split(/[\\/]/).pop() : "새 보드";
@@ -91,6 +142,9 @@ export default function App() {
   const newBoard = useCallback(() => {
     apiRef.current?.resetScene();
     apiRef.current?.history.clear();
+    apiRef.current?.updateScene({
+      appState: { viewBackgroundColor: appliedStored.current },
+    });
     setFilePath(null);
   }, []);
 
@@ -138,6 +192,12 @@ export default function App() {
       if (!api) return;
 
       if (e.key === "Escape") {
+        if (pickerOpenRef.current) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setPickerOpen(false);
+          return;
+        }
         const s = api.getAppState();
         const t = e.target;
         const typing =
@@ -186,7 +246,13 @@ export default function App() {
         onCapture={() => chh.startCapture()}
       />
       <div className="app-body">
-      <Excalidraw excalidrawAPI={setApi} theme="dark" langCode="ko-KR">
+      <Excalidraw
+        excalidrawAPI={setApi}
+        onChange={onSceneChange}
+        initialData={{ appState: { viewBackgroundColor: toStored(initialBg) } }}
+        theme="dark"
+        langCode="ko-KR"
+      >
         <MainMenu>
           {chh ? (
             <>
@@ -208,7 +274,26 @@ export default function App() {
           )}
           <MainMenu.DefaultItems.SaveAsImage />
           <MainMenu.Separator />
-          <MainMenu.DefaultItems.ChangeCanvasBackground />
+          <MainMenu.ItemCustom className="bg-item">
+            <div className="bg-title">캔버스 배경</div>
+            <div className="bg-row">
+              {BG_PRESETS.map((p) => (
+                <button
+                  key={p.color}
+                  className={`bg-swatch${bg.toLowerCase() === p.color ? " selected" : ""}`}
+                  style={{ background: p.color }}
+                  title={p.name}
+                  onClick={() => applyBg(p.color)}
+                />
+              ))}
+              <span className="bg-sep" />
+              <button
+                className={`bg-swatch bg-custom${pickerOpen ? " selected" : ""}`}
+                title="색상 직접 고르기"
+                onClick={() => setPickerOpen((v) => !v)}
+              />
+            </div>
+          </MainMenu.ItemCustom>
           <MainMenu.DefaultItems.Help />
           <MainMenu.DefaultItems.ClearCanvas />
 
@@ -244,6 +329,11 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
+      {pickerOpen && (
+        <div className="bgpanel">
+          <ColorWheel value={bg} onChange={applyBg} />
+        </div>
+      )}
       </div>
     </div>
   );

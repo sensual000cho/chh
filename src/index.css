@@ -123,3 +123,65 @@ body,
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 .tb-pop span { width: 36px; text-align: right; font-size: 12px; opacity: 0.8; }
+
+/* ---- 캔버스 배경 선택 ---- */
+.bg-item.bg-item { display: flex; flex-direction: column; align-items: stretch; height: auto; padding: 6px 4px 8px; }
+.bg-title { font-size: 0.8rem; opacity: 0.8; margin: 2px 0 8px 2px; }
+.bg-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bg-swatch {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+  cursor: pointer;
+}
+.bg-swatch:hover { transform: scale(1.1); }
+.bg-swatch.selected { outline: 2px solid #a8a5ff; outline-offset: 1px; }
+.bg-sep { width: 1px; height: 22px; background: rgba(128, 128, 128, 0.4); margin: 0 2px; }
+.bg-custom {
+  background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+}
+
+/* ---- 색상환 패널 ---- */
+.bgpanel {
+  position: fixed;
+  left: 400px;
+  top: 150px;
+  z-index: 50;
+  padding: 14px;
+  background: #3a3a3a;
+  border: 1px solid #555;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  user-select: none;
+}
+.cw-stage { position: relative; touch-action: none; cursor: crosshair; }
+.cw-layer { position: absolute; left: 0; top: 0; pointer-events: none; }
+.cw-handle {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: 4px solid #d8d8e0;
+  box-sizing: border-box;
+  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.cw-hex { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.cw-swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid #777; }
+.cw-hex input {
+  width: 90px;
+  padding: 4px 6px;
+  background: #2b2b2b;
+  border: 1px solid #555;
+  border-radius: 5px;
+  color: #fff;
+  font: 14px "Segoe UI", sans-serif;
+}
+
+/* 다크 테마 캔버스 필터를 100% 반전으로: 배경이 순수 검정~흰색까지 표현되게 한다 (color.js INV 와 맞춰야 함) */
+.app .excalidraw.theme--dark {
+  --theme-filter: invert(100%) hue-rotate(180deg);
+}
