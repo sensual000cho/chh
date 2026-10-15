@@ -6,3 +6,15 @@ body,
   background: #1e1e1e;
   overflow: hidden;
 }
+
+/* 최근 작업 파일: 빈 목록 안내 */
+.chh-recent-empty {
+  opacity: 0.6;
+  font-size: 0.8rem;
+  cursor: default;
+}
+
+/* 최근 작업 파일: "3분 전" 같은 시간 표시가 줄바꿈되지 않도록 */
+.chh-recent-item .dropdown-menu-item__shortcut {
+  white-space: nowrap;
+}
