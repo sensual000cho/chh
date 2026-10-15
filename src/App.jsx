@@ -32,6 +32,7 @@ const chh = window.chh;
 
 const BG_KEY = "chh.bg";
 const DEFAULT_STROKE = "#e6e6e6"; // 어두운 배경에서 잘 보이는 기본 선/글자 색
+const AUTOSAVE_DELAY = 2000; // 마지막 변경 후 이만큼 지나면 자동 저장 (ms)
 function loadBg() {
   try {
     const v = localStorage.getItem(BG_KEY);
@@ -74,15 +75,38 @@ export default function App() {
   // 파일 열기 등 바깥에서 배경이 바뀌면 선택 표시를 맞춘다
   // (적용 직후 이전 상태로 한 번 더 알림이 올 수 있어서, 직전에 본 값과 같으면 무시한다)
   const lastSeenStored = useRef(null);
-  const onSceneChange = useCallback((_els, appState) => {
-    const stored = appState.viewBackgroundColor;
-    const changed = stored !== lastSeenStored.current;
-    lastSeenStored.current = stored;
-    if (changed && stored !== appliedStored.current) {
-      appliedStored.current = stored;
-      setBg(stored);
-    }
+  const autosaveReady = useRef(false); // 시작 시 복원이 끝나기 전에는 자동 저장본을 덮어쓰지 않는다
+  const autosaveTimer = useRef(0);
+  const lastSig = useRef(null);
+  const scheduleAutosave = useCallback((els) => {
+    // 화면 이동/확대만 바뀐 경우는 건너뛰도록 요소 버전 합으로 변경 여부를 본다
+    let sum = 0;
+    for (const e of els) sum += e.version;
+    const sig = `${els.length}:${sum}`;
+    if (sig === lastSig.current) return;
+    lastSig.current = sig;
+    clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      const api = apiRef.current;
+      if (!api) return;
+      const content = serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), "local");
+      chh.autosaveWrite(content);
+    }, AUTOSAVE_DELAY);
   }, []);
+
+  const onSceneChange = useCallback(
+    (els, appState) => {
+      const stored = appState.viewBackgroundColor;
+      const changed = stored !== lastSeenStored.current;
+      lastSeenStored.current = stored;
+      if (changed && stored !== appliedStored.current) {
+        appliedStored.current = stored;
+        setBg(stored);
+      }
+      if (chh && autosaveReady.current) scheduleAutosave(els);
+    },
+    [scheduleAutosave],
+  );
 
   // 색상 선택 창 바깥을 누르면 닫는다
   useEffect(() => {
@@ -114,8 +138,9 @@ export default function App() {
       api.addFiles(Object.values(scene.files || {}));
       api.history.clear();
       api.scrollToContent(undefined, { fitToContent: true });
+      // path 가 null 이면 자동 저장본 복원: 파일에 연결하지 않는다
       setFilePath(path);
-      setRecent(addRecent(path));
+      if (path) setRecent(addRecent(path));
     } catch (err) {
       api.setToast({ message: `보드를 열 수 없습니다: ${err.message || err}` });
     }
@@ -250,9 +275,22 @@ export default function App() {
   // 실행 인자 / 이미 실행 중일 때 더블클릭한 .chh 파일 열기
   useEffect(() => {
     if (!api || !chh) return;
-    chh.pendingOpen().then((p) => p && openPath(p));
+    chh.pendingOpen().then(async (p) => {
+      if (p) {
+        autosaveReady.current = true;
+        openPath(p);
+        return;
+      }
+      // 열 파일이 없으면 지난번 자동 저장본을 복원한다
+      try {
+        const content = await chh.autosaveRead();
+        if (content) await openContent(null, content);
+      } finally {
+        autosaveReady.current = true;
+      }
+    });
     return chh.onOpenPath(openPath);
-  }, [api, openPath]);
+  }, [api, openPath, openContent]);
 
   // 화면 캡처 결과를 현재 화면 가운데에 이미지로 붙인다.
   useEffect(() => {

@@ -10,6 +10,7 @@ import {
   exportDataURL,
   isPixelBoard,
   loadRaw,
+  newCanvas,
   pixelInfo,
 } from "./board.js";
 
@@ -28,6 +29,10 @@ const PALETTE = [
 ];
 const RECENT_KEY = "chh.pixel.recent";
 const UNDO_LIMIT = 40;
+const COMMIT_DELAY = 300; // 마지막 획 후 이만큼 지나면 Excalidraw 요소에 반영 (ms)
+
+// 되돌리기/스포이드/채우기가 픽셀을 자주 읽으므로 CPU 쪽 캔버스로 만든다
+const ctx2d = (c) => c.getContext("2d", { willReadFrequently: true });
 
 function loadRecent() {
   try {
@@ -72,9 +77,12 @@ function bresenham(x0, y0, x1, y1, fn) {
 }
 
 // 4방향 채우기. 바뀐 픽셀 수를 돌려준다.
-function floodFill(ctx, w, h, sx, sy, [r, g, b]) {
+// src(이미 읽어둔 ImageData)를 주면 캔버스에서 다시 읽지 않고 그 복사본으로 작업한다.
+function floodFill(ctx, w, h, sx, sy, [r, g, b], src) {
   if (sx < 0 || sy < 0 || sx >= w || sy >= h) return 0;
-  const img = ctx.getImageData(0, 0, w, h);
+  const img = src
+    ? new ImageData(new Uint8ClampedArray(src.data), w, h)
+    : ctx.getImageData(0, 0, w, h);
   const d = img.data;
   const at = (x, y) => (y * w + x) * 4;
   const i0 = at(sx, sy);
@@ -245,7 +253,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     loadRaw(data, w, h).then((raw) => {
       const c = canvasRef.current;
       if (cancelled || !c) return;
-      const ctx = c.getContext("2d");
+      const ctx = ctx2d(c);
       ctx.clearRect(0, 0, w, h);
       ctx.drawImage(raw, 0, 0);
       ready.current = true;
@@ -258,11 +266,32 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
 
   const syncStack = () => setStack({ undo: undoRef.current.length, redo: redoRef.current.length });
 
+  // 획마다 PNG 를 두 번 인코딩하면 느리므로, 마지막 획 뒤에 한 번만 요소에 반영한다.
+  // 대기 중인 픽셀은 ImageData 로 따로 보관해서 캔버스가 사라져도 잃지 않는다.
+  const pendingRef = useRef(null); // { id, img }
+  const commitTimer = useRef(0);
+
+  const flushCommit = useCallback(() => {
+    clearTimeout(commitTimer.current);
+    const p = pendingRef.current;
+    pendingRef.current = null;
+    if (!p || !api) return;
+    const raw = newCanvas(p.img.width, p.img.height);
+    raw.getContext("2d").putImageData(p.img, 0, 0);
+    commitBoard(api, p.id, raw);
+  }, [api]);
+
   const commit = useCallback(() => {
     const c = canvasRef.current;
     const id = live.current.editingId;
-    if (c && id) commitBoard(api, id, c);
-  }, [api]);
+    if (!c || !id) return;
+    pendingRef.current = { id, img: ctx2d(c).getImageData(0, 0, c.width, c.height) };
+    clearTimeout(commitTimer.current);
+    commitTimer.current = setTimeout(flushCommit, COMMIT_DELAY);
+  }, [flushCommit]);
+
+  // 그리기 모드를 끝내거나 판이 바뀌거나 사라질 때 남은 변경을 반영한다
+  useEffect(() => flushCommit, [editingId, flushCommit]);
 
   const pushRecent = useCallback((c) => {
     setRecent((prev) => {
@@ -290,8 +319,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   };
 
   const paint = (x, y) => {
-    const c = canvasRef.current;
-    const ctx = c.getContext("2d");
+    const ctx = ctx2d(canvasRef.current);
     const { tool: t, size: s, color: col } = live.current;
     const o = Math.floor(s / 2);
     if (t === "eraser") ctx.clearRect(x - o, y - o, s, s);
@@ -309,7 +337,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   const pickColor = (x, y) => {
     const c = canvasRef.current;
     if (x < 0 || y < 0 || x >= c.width || y >= c.height) return;
-    const [r, g, b, a] = c.getContext("2d").getImageData(x, y, 1, 1).data;
+    const [r, g, b, a] = ctx2d(c).getImageData(x, y, 1, 1).data;
     if (a === 0) {
       setTool("eraser");
       return;
@@ -331,11 +359,11 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
       pickColor(p.x, p.y);
       return;
     }
-    const ctx = c.getContext("2d");
+    const ctx = ctx2d(c);
     const before = ctx.getImageData(0, 0, c.width, c.height);
     if (t === "fill") {
       const rgb = hexToRgb(live.current.color) || [0, 0, 0];
-      if (floodFill(ctx, c.width, c.height, p.x, p.y, rgb)) {
+      if (floodFill(ctx, c.width, c.height, p.x, p.y, rgb, before)) {
         undoRef.current.push(before);
         redoRef.current = [];
         if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
@@ -375,7 +403,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   const undo = useCallback(() => {
     const c = canvasRef.current;
     if (!c || !undoRef.current.length) return;
-    const ctx = c.getContext("2d");
+    const ctx = ctx2d(c);
     redoRef.current.push(ctx.getImageData(0, 0, c.width, c.height));
     ctx.putImageData(undoRef.current.pop(), 0, 0);
     syncStack();
@@ -385,7 +413,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   const redo = useCallback(() => {
     const c = canvasRef.current;
     if (!c || !redoRef.current.length) return;
-    const ctx = c.getContext("2d");
+    const ctx = ctx2d(c);
     undoRef.current.push(ctx.getImageData(0, 0, c.width, c.height));
     ctx.putImageData(redoRef.current.pop(), 0, 0);
     syncStack();
@@ -393,6 +421,8 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   }, [commit]);
 
   // 판 위에서의 휠(확대/이동)은 Excalidraw 캔버스로 넘긴다
+  // (캔버스가 실제로 그려지는 동안에만 다시 붙이면 되므로 deps 를 둔다)
+  const canvasShown = !!(editingId && board && view);
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -417,7 +447,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     };
     c.addEventListener("wheel", onWheel, { passive: false });
     return () => c.removeEventListener("wheel", onWheel);
-  });
+  }, [canvasShown]);
 
   // ---- 키보드 (그리기 모드일 때만) ----
   useEffect(() => {
