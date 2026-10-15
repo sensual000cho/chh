@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "cross-env CHH_DEV=1 electron .",
-    "dist": "npm run build && electron-builder --win portable"
+    "dist": "npm run build && electron-builder --win portable && node scripts/publish.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.1",
