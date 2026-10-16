@@ -45,7 +45,8 @@
       "package.json"
     ],
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "build/icon.png"
     },
     "portable": {
       "artifactName": "CHH.exe"
