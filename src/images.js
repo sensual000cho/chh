@@ -58,6 +58,17 @@ async function prepare(dataURL, mime = mimeOfDataURL(dataURL)) {
   return { dataURL: url, mimeType: type, width: img.naturalWidth || 100, height: img.naturalHeight || 100 };
 }
 
+// 외부 앱으로 복사할 때 쓰는 PNG dataURL (OS 클립보드는 PNG/JPEG 만 받는다)
+export async function toPngDataURL(dataURL) {
+  if (mimeOfDataURL(dataURL) === "image/png") return dataURL;
+  const img = await loadImage(dataURL);
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth || 512;
+  c.height = img.naturalHeight || 512;
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/png");
+}
+
 // sources: [{ dataURL, mime? }]  /  anchor: { x, y } 장면 좌표
 // mode "center": 묶음의 중앙이 anchor, "corner": 묶음의 왼쪽 위가 anchor
 export async function insertImages(api, sources, anchor, mode = "center") {

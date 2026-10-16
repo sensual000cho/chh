@@ -21,6 +21,7 @@ import {
   isImageFile,
   pickDropped,
   readAsDataURL,
+  toPngDataURL,
   viewCenter,
 } from "./images.js";
 import { BG_PRESETS } from "./color.js";
@@ -271,6 +272,44 @@ export default function App() {
       el.removeEventListener("drop", onDrop, true);
     };
   }, [api, openPath]);
+
+  // 이미지 하나를 복사하면 OS 클립보드에 비트맵도 함께 넣어 PureRef 등 외부 앱에 붙여넣을 수 있게 한다.
+  // (Excalidraw 는 요소 JSON 텍스트만 복사한다 → PureRef 가 수백만 글자의 노트로 붙여넣으려 함)
+  useEffect(() => {
+    if (!api || !chh?.addImageToClipboard) return;
+    const onCopy = () => {
+      const s = api.getAppState();
+      const sel = api.getSceneElements().filter((el) => s.selectedElementIds[el.id]);
+      if (sel.length !== 1 || sel[0].type !== "image") return;
+      const file = api.getFiles()[sel[0].fileId];
+      if (!file?.dataURL) return;
+      // Excalidraw 의 텍스트 복사(비동기)가 끝난 뒤 이미지를 덧붙인다.
+      setTimeout(async () => {
+        try {
+          await chh.addImageToClipboard(await toPngDataURL(file.dataURL));
+        } catch {}
+      }, 150);
+    };
+    // 반대로 CHH 안에서 붙여넣을 때는 Excalidraw 가 이미지 파일을 JSON 보다 우선하므로,
+    // 우리 요소 JSON 이 있으면 이미지를 뺀 붙여넣기 이벤트로 바꿔 크기·위치를 그대로 살린다.
+    const onPaste = (e) => {
+      const dt = e.clipboardData;
+      if (!e.isTrusted || !dt?.files?.length) return;
+      const text = dt.getData("text/plain");
+      if (!text.includes('"excalidraw/clipboard"')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const only = new DataTransfer();
+      only.setData("text/plain", text);
+      document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: only, bubbles: true }));
+    };
+    document.addEventListener("copy", onCopy);
+    window.addEventListener("paste", onPaste, true);
+    return () => {
+      document.removeEventListener("copy", onCopy);
+      window.removeEventListener("paste", onPaste, true);
+    };
+  }, [api]);
 
   // 실행 인자 / 이미 실행 중일 때 더블클릭한 .chh 파일 열기
   useEffect(() => {

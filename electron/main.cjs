@@ -4,6 +4,7 @@ const {
   app,
   BrowserWindow,
   ipcMain,
+  clipboard,
   dialog,
   screen,
   desktopCapturer,
@@ -260,6 +261,17 @@ ipcMain.handle("file:save-image", async (_e, { defaultName, dataURL }) => {
   } catch (err) {
     return { error: String(err.message || err) };
   }
+});
+
+// 복사한 이미지 하나를 OS 클립보드에 비트맵으로도 넣는다.
+// Excalidraw 는 요소 JSON(텍스트)만 복사하므로 PureRef 등 외부 앱은 이미지로 인식하지 못한다.
+// 텍스트(JSON)는 그대로 두어 CHH 안에서의 붙여넣기(크기·위치 유지)는 유지한다.
+ipcMain.handle("clipboard:add-image", (_e, pngDataURL) => {
+  const image = nativeImage.createFromDataURL(pngDataURL || "");
+  if (image.isEmpty()) return false;
+  const text = clipboard.readText();
+  clipboard.write(text ? { text, image } : { image });
+  return true;
 });
 
 // 웹에서 끌어온 이미지 URL을 받아오기 (렌더러에서는 CORS로 막힐 수 있음)

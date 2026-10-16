@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld("chh", {
   // 웹 이미지
   fetchImage: (url) => ipcRenderer.invoke("net:fetch-image", url),
 
+  // 클립보드
+  addImageToClipboard: (pngDataURL) => ipcRenderer.invoke("clipboard:add-image", pngDataURL),
+
   // 캡처
   startCapture: () => ipcRenderer.send("capture:start"),
   setCaptureShortcut: (accel) => ipcRenderer.invoke("capture:set-shortcut", accel),
