@@ -65,6 +65,32 @@ function saveWindowState() {
   } catch {}
 }
 
+// 실행 직후 로딩 중임을 알리는 스플래시 (아이콘이 화면 중앙에 뜬다)
+let splash = null;
+function showSplash() {
+  splash = new BrowserWindow({
+    width: 240,
+    height: 240,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    center: true,
+    focusable: false,
+    show: false,
+    icon: path.join(__dirname, "..", "build", "icon.png"),
+  });
+  splash.loadFile(path.join(__dirname, "splash.html"));
+  splash.once("ready-to-show", () => splash?.show());
+  splash.on("closed", () => (splash = null));
+}
+function closeSplash() {
+  if (splash && !splash.isDestroyed()) splash.close();
+  splash = null;
+}
+
 function createMainWindow() {
   const state = loadWindowState();
   mainWindow = new BrowserWindow({
@@ -91,7 +117,10 @@ function createMainWindow() {
   if (isDev) mainWindow.loadURL("http://localhost:5173");
   else mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 
-  mainWindow.once("ready-to-show", () => mainWindow.show());
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+    closeSplash();
+  });
 
   // 개발용 자가 점검: CHH_SHOT=경로 → 화면을 PNG로 저장하고 종료
   if (process.env.CHH_SHOT) {
@@ -132,6 +161,7 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
+  if (!isDev && !process.env.CHH_SHOT) showSplash();
   createMainWindow();
   registerCaptureShortcut(captureShortcut);
 });
@@ -151,6 +181,24 @@ ipcMain.on("win:opacity", (_e, value) => {
   const v = Math.min(1, Math.max(0.15, Number(value) || 1));
   mainWindow?.setOpacity(v);
 });
+// 우클릭 드래그로 창 이동 (PureRef 방식): 커서 위치를 폴링해 창을 따라가게 한다
+let dragTimer = null;
+function stopWindowDrag() {
+  if (dragTimer) clearInterval(dragTimer);
+  dragTimer = null;
+}
+ipcMain.on("win:drag-start", () => {
+  if (!mainWindow || mainWindow.isMaximized() || mainWindow.isFullScreen()) return;
+  stopWindowDrag();
+  const start = screen.getCursorScreenPoint();
+  const b = mainWindow.getBounds();
+  dragTimer = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return stopWindowDrag();
+    const p = screen.getCursorScreenPoint();
+    mainWindow.setBounds({ x: b.x + p.x - start.x, y: b.y + p.y - start.y, width: b.width, height: b.height });
+  }, 8);
+});
+ipcMain.on("win:drag-stop", stopWindowDrag);
 ipcMain.handle("app:pending-open", () => {
   const p = pendingOpenPath;
   pendingOpenPath = null;

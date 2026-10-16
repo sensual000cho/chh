@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("chh", {
   close: () => ipcRenderer.send("win:close"),
   setAlwaysOnTop: (on) => ipcRenderer.send("win:always-on-top", on),
   setOpacity: (v) => ipcRenderer.send("win:opacity", v),
+  dragStart: () => ipcRenderer.send("win:drag-start"),
+  dragStop: () => ipcRenderer.send("win:drag-stop"),
   onWindowState: (cb) => on("window-state", cb),
 
   // 파일
