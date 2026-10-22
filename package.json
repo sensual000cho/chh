@@ -12,20 +12,18 @@
     "preview": "vite preview",
     "electron": "electron .",
     "electron:dev": "cross-env CHH_DEV=1 electron .",
-    "dist": "npm run build && electron-builder --win portable && node scripts/publish.mjs",
+    "dist": "npm run build && electron-builder --win portable nsis && node scripts/publish.mjs",
     "gen:dark-css": "node scripts/gen-dark-css.mjs"
   },
-  "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.1",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1"
-  },
   "devDependencies": {
+    "@excalidraw/excalidraw": "^0.18.1",
     "@vitejs/plugin-react": "^5.0.0",
     "cross-env": "^7.0.3",
     "electron": "38.8.6",
     "electron-builder": "^26.15.3",
     "postcss": "^8.5.30",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "vite": "^8.3.4"
   },
   "allowScripts": {
@@ -48,9 +46,20 @@
       "target": "portable",
       "icon": "build/icon.png"
     },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "artifactName": "CHH-Setup.exe"
+    },
     "portable": {
-      "artifactName": "CHH.exe",
-      "splashImage": "build/splash.bmp"
-    }
+      "artifactName": "CHH.exe"
+    },
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ]
   }
 }

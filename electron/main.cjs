@@ -67,6 +67,7 @@ function saveWindowState() {
 
 // 실행 직후 로딩 중임을 알리는 스플래시 (아이콘이 화면 중앙에 뜬다)
 let splash = null;
+let splashShownAt = 0;
 function showSplash() {
   splash = new BrowserWindow({
     width: 240,
@@ -79,12 +80,17 @@ function showSplash() {
     alwaysOnTop: true,
     center: true,
     focusable: false,
-    show: false,
+    show: true,
     icon: path.join(__dirname, "..", "build", "icon.png"),
   });
+  splash.setAlwaysOnTop(true, "screen-saver"); // 항상 위로 설정된 메인 창보다도 위에 둔다
   splash.loadFile(path.join(__dirname, "splash.html"));
-  splash.once("ready-to-show", () => splash?.show());
+  splashShownAt = Date.now();
+  splash.webContents.once("did-finish-load", () => splashProgress(10));
   splash.on("closed", () => (splash = null));
+}
+function splashProgress(v) {
+  if (splash && !splash.isDestroyed()) splash.webContents.executeJavaScript(`window.setProgress?.(${v})`).catch(() => {});
 }
 function closeSplash() {
   if (splash && !splash.isDestroyed()) splash.close();
@@ -98,7 +104,7 @@ function createMainWindow() {
     y: state.y,
     width: state.width || 1280,
     height: state.height || 800,
-    minWidth: 360,
+    minWidth: 340,
     minHeight: 240,
     frame: false,
     backgroundColor: "#1e1e1e",
@@ -113,13 +119,23 @@ function createMainWindow() {
     },
   });
   if (state.maximized) mainWindow.maximize();
+  splashProgress(30);
+  const wc = mainWindow.webContents;
+  wc.once("did-start-loading", () => splashProgress(45));
+  wc.once("dom-ready", () => splashProgress(70));
+  wc.once("did-finish-load", () => splashProgress(90));
 
   if (isDev) mainWindow.loadURL("http://localhost:5173");
   else mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
-    closeSplash();
+    splashProgress(100);
+    // 스플래시가 너무 금방 사라져 안 보이지 않도록 최소 1.2초는 보여준 뒤 메인 창을 띄운다
+    const wait = splash ? Math.max(300, 1200 - (Date.now() - splashShownAt)) : 0;
+    setTimeout(() => {
+      mainWindow.show();
+      closeSplash();
+    }, wait);
   });
 
   // 개발용 자가 점검: CHH_SHOT=경로 → 화면을 PNG로 저장하고 종료

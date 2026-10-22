@@ -1,9 +1,22 @@
 <!doctype html>
 <meta charset="utf-8">
 <style>
-  html,body{margin:0;height:100%;background:transparent;overflow:hidden;-webkit-app-region:drag}
-  body{display:flex;align-items:center;justify-content:center}
+  html,body{margin:0;height:100%;background:transparent;overflow:hidden;-webkit-app-region:drag;user-select:none}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+       font:600 15px "Segoe UI","Malgun Gothic",sans-serif;color:#fff}
   img{width:160px;height:160px;animation:pulse 1.2s ease-in-out infinite}
-  @keyframes pulse{0%,100%{opacity:.55;transform:scale(.96)}50%{opacity:1;transform:scale(1)}}
+  #pct{text-shadow:0 1px 4px rgba(0,0,0,.9),0 0 2px rgba(0,0,0,.9)}
+  @keyframes pulse{0%,100%{opacity:.6;transform:scale(.96)}50%{opacity:1;transform:scale(1)}}
 </style>
 <img src="splash-icon.png">
+<div id="pct">0%</div>
+<script>
+  // 목표 퍼센트(메인 프로세스가 갱신)를 향해 표시 값을 부드럽게 올린다.
+  let target = 0, shown = 0;
+  window.setProgress = (v) => { target = Math.max(target, v); };
+  setInterval(() => {
+    if (shown < target) shown = Math.min(target, shown + Math.max(1, (target - shown) * 0.2));
+    else if (shown < 95 && shown < target + 8) shown += 0.15; // 다음 단계를 기다리는 동안 살짝 전진
+    document.getElementById("pct").textContent = Math.floor(shown) + "%";
+  }, 40);
+</script>

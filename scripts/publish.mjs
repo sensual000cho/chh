@@ -6,6 +6,8 @@ const src = "release/CHH.exe";
 if (!existsSync(src)) throw new Error(`${src} 가 없습니다. electron-builder 단계가 실패했습니다.`);
 
 copyFileSync(src, "CHH.exe");
+// 설치형: 한 번 설치하면 실행할 때 압축을 풀지 않아 시작 즉시 로딩 화면이 뜬다
+if (existsSync("release/CHH-Setup.exe")) copyFileSync("release/CHH-Setup.exe", "CHH-Setup.exe");
 rmSync("CHH-공유용.zip", { force: true });
 execFileSync(
   "powershell",

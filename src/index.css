@@ -40,12 +40,16 @@ body,
   color: #d4d4d4;
   font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
   user-select: none;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .tb-drag {
   -webkit-app-region: drag;
   height: 100%;
 }
 .tb-title {
+  flex: 0 1 auto;
+  overflow: hidden;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -65,9 +69,11 @@ body,
   max-width: 40vw;
 }
 .tb-spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
 }
 .tb-group {
+  flex: none;
   display: flex;
   align-items: center;
   height: 100%;
@@ -86,6 +92,8 @@ body,
   background: #333;
 }
 .tb-btn {
+  flex: none;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -201,7 +209,16 @@ body,
 .ui-hidden.tb-peek .tb-drag {
   -webkit-app-region: no-drag;
 }
+/* UI 숨김 중에는 마우스를 올려도 상단 바만 보이고 도구 버튼은 숨긴다 (창 버튼은 유지) */
+.ui-hidden .titlebar .tb-group:not(.tb-win) {
+  display: none;
+}
 .ui-hidden .layer-ui__wrapper,
+/* 창이 좁으면 Excalidraw가 모바일 레이아웃으로 바뀌므로 그쪽 UI도 숨긴다 */
+.ui-hidden .App-mobile-menu,
+.ui-hidden .App-top-bar,
+.ui-hidden .App-bottom-bar,
+.ui-hidden .mobile-misc-tools-container,
 .ui-hidden .bgpanel,
 .ui-hidden .pxpanel {
   display: none !important;
@@ -363,4 +380,20 @@ body,
 /* 픽셀판 선택 중에는 이미지 자르기 안내를 숨긴다 */
 body.px-board-selected .HintViewer {
   display: none;
+}
+
+/* 창이 좁아지면 글자부터 줄인다 (세로로 깨지지 않게) */
+@media (max-width: 720px) {
+  .tb-label { display: none; }
+}
+@media (max-width: 560px) {
+  .tb-name { display: none; }
+}
+/* 아주 좁을 때: 로고도 숨기고 버튼 간격을 줄여 도구 버튼과 창 버튼이 모두 들어가게 한다 */
+@media (max-width: 480px) {
+  .tb-title { display: none; }
+  .tb-group { padding: 0 2px; gap: 0; }
+  .tb-btn { padding: 0 3px; }
+  .tb-sep { margin: 0 1px; }
+  .tb-win .tb-btn { width: 34px; }
 }
