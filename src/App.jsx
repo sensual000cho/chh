@@ -292,16 +292,26 @@ export default function App() {
     };
     // 반대로 CHH 안에서 붙여넣을 때는 Excalidraw 가 이미지 파일을 JSON 보다 우선하므로,
     // 우리 요소 JSON 이 있으면 이미지를 뺀 붙여넣기 이벤트로 바꿔 크기·위치를 그대로 살린다.
-    const onPaste = (e) => {
+    // 외부 이미지는 insertImages 로 넣어 파일 선택/드롭과 같은 크기 규칙을 따르게 한다.
+    const onPaste = async (e) => {
       const dt = e.clipboardData;
       if (!e.isTrusted || !dt?.files?.length) return;
       const text = dt.getData("text/plain");
-      if (!text.includes('"excalidraw/clipboard"')) return;
+      if (text.includes('"excalidraw/clipboard"')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const only = new DataTransfer();
+        only.setData("text/plain", text);
+        document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: only, bubbles: true }));
+        return;
+      }
+      const files = [...dt.files].filter(isImageFile);
+      if (!files.length || /^(input|textarea)$/i.test(e.target?.tagName) || e.target?.isContentEditable) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      const only = new DataTransfer();
-      only.setData("text/plain", text);
-      document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: only, bubbles: true }));
+      const sources = [];
+      for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
+      insertImages(api, sources, viewCenter(api), "center");
     };
     document.addEventListener("copy", onCopy);
     window.addEventListener("paste", onPaste, true);

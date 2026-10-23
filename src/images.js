@@ -82,22 +82,19 @@ export async function insertImages(api, sources, anchor, mode = "center") {
   }
   if (!prepared.length) return 0;
 
-  const st = api.getAppState();
-  const viewW = st.width / st.zoom.value;
-  const viewH = st.height / st.zoom.value;
-  const maxW = viewW * 0.5;
-  const maxH = viewH * 0.6;
-  const GAP = 24 / st.zoom.value;
-  const rowLimit = viewW * 0.9;
+  // 창 크기나 현재 확대/축소와 상관없이 항상 같은 크기로 넣는다 (아주 큰 사진만 긴 변 MAX 로 줄임).
+  const MAX = 1440;
+  const GAP = 24;
+  const rowLimit = 4000;
 
-  // 한 줄로 늘어놓다가 화면 너비를 넘으면 줄바꿈
+  // 한 줄로 늘어놓다가 rowLimit 를 넘으면 줄바꿈
   const placed = [];
   let x = 0;
   let y = 0;
   let rowH = 0;
   let maxX = 0;
   for (const p of prepared) {
-    const k = Math.min(1, maxW / p.width, maxH / p.height);
+    const k = Math.min(1, MAX / p.width, MAX / p.height);
     const w = p.width * k;
     const h = p.height * k;
     if (x > 0 && x + w > rowLimit) {
