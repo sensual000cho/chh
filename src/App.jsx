@@ -10,7 +10,8 @@ import {
 import "@excalidraw/excalidraw/index.css";
 import "./excalidraw-dark.css"; // 라이트 테마(필터 없음) 위에 다크 UI 팔레트를 입힌다 (npm run gen:dark-css)
 import TitleBar from "./TitleBar.jsx";
-import ColorWheel from "./ColorWheel.jsx";
+import ColorPicker from "./ColorPicker.jsx";
+import ElementColorPicker from "./ElementColorPicker.jsx";
 import PixelLayer from "./pixel/PixelLayer.jsx";
 import PixelDialog from "./pixel/PixelDialog.jsx";
 import { createBoard } from "./pixel/board.js";
@@ -49,6 +50,8 @@ export default function App() {
   const [initialBg] = useState(loadBg);
   const [bg, setBg] = useState(initialBg); // 화면에 보이는 캔버스 배경색
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState(null);
+  const [elPicker, setElPicker] = useState(null); // 요소 선/배경 색 선택기 { type, left, top }
   const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
   const [pixelDialog, setPixelDialog] = useState(false);
   const [autoEdit, setAutoEdit] = useState(null);
@@ -62,6 +65,8 @@ export default function App() {
   apiRef.current = api;
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = pickerOpen;
+  const elPickerRef = useRef(null);
+  elPickerRef.current = elPicker;
   const appliedStored = useRef(initialBg); // 마지막으로 우리가 적용한 viewBackgroundColor
 
   const applyBg = useCallback((color) => {
@@ -119,6 +124,37 @@ export default function App() {
     window.addEventListener("pointerdown", close);
     return () => window.removeEventListener("pointerdown", close);
   }, [pickerOpen]);
+
+  // Excalidraw 속성 패널의 선 색상 / 배경색 버튼: 기본 팝업 대신 우리 선택기를 연다
+  useEffect(() => {
+    const TRIGGER = ".properties-trigger.active-color";
+    const onDown = (e) => {
+      const btn = e.target.closest?.(TRIGGER);
+      if (!btn) {
+        if (elPickerRef.current && !e.target.closest?.(".elpanel")) setElPicker(null);
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type !== "pointerdown") return;
+      // 패널 안의 첫 번째 색 버튼이 선 색상, 두 번째가 배경색
+      const panel = btn.closest(".Island") || btn.parentElement;
+      const type = [...panel.querySelectorAll(TRIGGER)].indexOf(btn) === 1 ? "bg" : "stroke";
+      const p = panel.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      setElPicker((cur) =>
+        cur?.type === type
+          ? null
+          : { type, left: p.right + 4, top: Math.max(8, Math.min(b.top - 8, window.innerHeight - 260)) },
+      );
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("click", onDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("click", onDown, true);
+    };
+  }, []);
 
   useEffect(() => {
     const name = filePath ? filePath.split(/[\\/]/).pop() : "새 보드";
@@ -400,10 +436,11 @@ export default function App() {
           setUiHidden(false);
           return;
         }
-        if (pickerOpenRef.current) {
+        if (pickerOpenRef.current || elPickerRef.current) {
           e.preventDefault();
           e.stopImmediatePropagation();
           setPickerOpen(false);
+          setElPicker(null);
           return;
         }
         const s = api.getAppState();
@@ -569,7 +606,17 @@ export default function App() {
               <button
                 className={`bg-swatch bg-custom${pickerOpen ? " selected" : ""}`}
                 title="색상 직접 고르기"
-                onClick={() => setPickerOpen((v) => !v)}
+                onClick={(e) => {
+                  // 메뉴 오른쪽에 붙여서, 배경 색 줄과 같은 높이에 연다
+                  const menu = e.currentTarget.closest(".dropdown-menu-container") || e.currentTarget.closest(".dropdown-menu");
+                  const row = e.currentTarget.closest(".bg-item") || e.currentTarget;
+                  if (menu) {
+                    const m = menu.getBoundingClientRect();
+                    const r = row.getBoundingClientRect();
+                    setPickerPos({ left: m.right + 4, top: Math.max(8, Math.min(r.top, window.innerHeight - 330)) });
+                  }
+                  setPickerOpen((v) => !v);
+                }}
               />
             </div>
           </MainMenu.ItemCustom>
@@ -626,9 +673,10 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      {elPicker && api && <ElementColorPicker key={elPicker.type} api={api} target={elPicker} />}
       {pickerOpen && (
-        <div className="bgpanel">
-          <ColorWheel value={bg} onChange={applyBg} />
+        <div className="bgpanel" style={pickerPos || undefined}>
+          <ColorPicker value={bg} onChange={applyBg} />
         </div>
       )}
       </div>

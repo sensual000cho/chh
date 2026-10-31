@@ -7,6 +7,7 @@ import { loadImage } from "../images.js";
 
 export const PIXEL_KEY = "chhPixel";
 export const MAX_SIZE = 512;
+export const clampSize = (v) => Math.max(1, Math.min(MAX_SIZE, Math.round(Number(v) || 1)));
 
 export const isPixelBoard = (el) =>
   !!el && !el.isDeleted && el.type === "image" && !!el.customData?.[PIXEL_KEY];
@@ -103,6 +104,7 @@ export function createBoard(api, w, h) {
 }
 
 // 편집한 픽셀을 요소에 반영한다 (원본 데이터 + 표시용 이미지)
+// 가로/세로 픽셀 수가 바뀌었으면 한 칸 크기는 그대로 두고 요소 크기를 늘리거나 줄인다 (왼쪽 위 기준)
 export function commitBoard(api, id, raw) {
   const fileId = `pxl_${Date.now()}_${uid()}`;
   api.addFiles([{ id: fileId, dataURL: bake(raw), mimeType: "image/png", created: Date.now() }]);
@@ -112,6 +114,8 @@ export function commitBoard(api, id, raw) {
       e.id === id
         ? {
             ...e,
+            width: (e.width / pixelInfo(e).w) * raw.width,
+            height: (e.height / pixelInfo(e).h) * raw.height,
             fileId,
             customData: { ...e.customData, [PIXEL_KEY]: { w: raw.width, h: raw.height, data } },
             version: e.version + 1,

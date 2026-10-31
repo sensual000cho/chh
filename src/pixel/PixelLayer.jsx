@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sceneCoordsToViewportCoords, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
-import ColorWheel from "../ColorWheel.jsx";
+import ColorPicker from "../ColorPicker.jsx";
 import { hexToRgb } from "../color.js";
 import {
   CHECKER_COLORS,
   boardAt,
   checkerTile,
+  clampSize,
   commitBoard,
   exportDataURL,
   isPixelBoard,
   loadRaw,
+  MAX_SIZE,
   newCanvas,
   pixelInfo,
 } from "./board.js";
@@ -54,6 +56,37 @@ const sameBoard = (a, b) =>
     a.height === b.height &&
     a.angle === b.angle &&
     a.fileId === b.fileId);
+
+// 픽셀판 가로/세로 입력칸: Enter 나 포커스를 뺄 때 적용, Esc 는 취소
+function SizeInput({ value, onCommit, title }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const apply = () => {
+    const v = clampSize(text);
+    setText(String(v));
+    if (v !== value) onCommit(v);
+  };
+  return (
+    <input
+      className="px-size"
+      type="number"
+      min="1"
+      max={MAX_SIZE}
+      value={text}
+      title={title}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={apply}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") {
+          setText(String(value));
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 function bresenham(x0, y0, x1, y1, fn) {
   const dx = Math.abs(x1 - x0);
@@ -239,7 +272,8 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     };
   }, [api, board, editingId, startEdit]);
 
-  // ---- 그리기 모드: 픽셀 버퍼 불러오기 ----
+  // ---- 그리기 모드: 픽셀 버퍼 불러오기 (판 크기가 바뀌어도 다시 불러온다) ----
+  const boardDims = board ? `${pixelInfo(board).w}x${pixelInfo(board).h}` : "";
   useEffect(() => {
     if (!editingId || !api) return;
     ready.current = false;
@@ -262,7 +296,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
       cancelled = true;
       ready.current = false;
     };
-  }, [editingId, api]);
+  }, [editingId, api, boardDims]);
 
   const syncStack = () => setStack({ undo: undoRef.current.length, redo: redoRef.current.length });
 
@@ -526,6 +560,19 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     };
   }, [api]);
 
+  // ---- 판 크기 바꾸기: 기존 그림은 왼쪽 위에 그대로 두고 잘라내거나 투명하게 늘린다 ----
+  const resize = async (nw, nh) => {
+    const el = api.getSceneElements().find((e) => e.id === board?.id);
+    if (!el) return;
+    const { w, h, data } = pixelInfo(el);
+    if (nw === w && nh === h) return;
+    const src = editingId === el.id && canvasRef.current ? canvasRef.current : await loadRaw(data, w, h);
+    flushCommit();
+    const raw = newCanvas(nw, nh);
+    raw.getContext("2d").drawImage(src, 0, 0);
+    commitBoard(api, el.id, raw);
+  };
+
   // ---- 내보내기 ----
   const doExport = async () => {
     const el = api.getSceneElements().find((e) => e.id === board?.id);
@@ -594,7 +641,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
       <div className="pxpanel" onPointerDown={(e) => e.stopPropagation()}>
         {colorOpen && editing && (
           <div className="px-colorpop">
-            <ColorWheel value={color} onChange={setColor} />
+            <ColorPicker value={color} onChange={setColor} />
             <div className="px-palette">
               {PALETTE.map((c) => (
                 <button
@@ -610,7 +657,10 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
         )}
         <div className="px-bar">
           <span className="px-info">
-            픽셀판 {info.w} × {info.h}
+            픽셀판
+            <SizeInput value={info.w} onCommit={(v) => resize(v, info.h)} title="가로 픽셀 수 (Enter로 적용)" />
+            ×
+            <SizeInput value={info.h} onCommit={(v) => resize(info.w, v)} title="세로 픽셀 수 (Enter로 적용)" />
           </span>
           {!editing ? (
             <button className="px-btn primary" onClick={startEdit} title="이 판에 그리기">

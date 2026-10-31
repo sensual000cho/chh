@@ -27,8 +27,9 @@ root.walkRules((rule) => {
       .replace(/\.excalidraw\.theme--dark(?![\w-])|\.theme--dark(?![\w-])\.excalidraw/g, ".chh-dark .excalidraw")
       .replace(/\.theme--dark(?![\w-])/g, ".chh-dark"),
   );
+  // 색 견본(선 색상·배경색 버튼 등)도 --theme-filter 로 반전되어 실제 색과 다르게 보이므로 변수 자체도 뺀다
   clone.walkDecls((d) => {
-    if (d.prop === "filter" && d.value.includes("--theme-filter")) d.remove();
+    if (d.prop === "--theme-filter" || (d.prop === "filter" && d.value.includes("--theme-filter"))) d.remove();
   });
   if (!clone.nodes.length) return;
 

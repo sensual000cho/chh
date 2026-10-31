@@ -135,10 +135,10 @@ body,
 /* ---- 캔버스 배경 선택 ---- */
 .bg-item.bg-item { display: flex; flex-direction: column; align-items: stretch; height: auto; padding: 6px 4px 8px; }
 .bg-title { font-size: 0.8rem; opacity: 0.8; margin: 2px 0 8px 2px; }
-.bg-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.bg-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .bg-swatch {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border-radius: 6px;
   border: 1px solid rgba(128, 128, 128, 0.5);
@@ -146,49 +146,26 @@ body,
 }
 .bg-swatch:hover { transform: scale(1.1); }
 .bg-swatch.selected { outline: 2px solid #a8a5ff; outline-offset: 1px; }
-.bg-sep { width: 1px; height: 22px; background: rgba(128, 128, 128, 0.4); margin: 0 2px; }
+.bg-sep { width: 1px; height: 22px; background: rgba(128, 128, 128, 0.4); margin: 0 1px; }
 .bg-custom {
   background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
 }
 
-/* ---- 색상환 패널 ---- */
+/* ---- 색상 선택 패널 (캔버스 배경 · 도형 색 · 픽셀판) ---- */
+.bgpanel,
+.px-colorpop {
+  padding: 8px;
+  background: #232329;
+  border: 1px solid #3a3a42;
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
 .bgpanel {
   position: fixed;
-  left: 400px;
+  left: 400px; /* 열 때 메뉴(또는 속성 패널) 바로 옆으로 다시 잡는다 */
   top: 150px;
   z-index: 50;
-  padding: 14px;
-  background: #3a3a3a;
-  border: 1px solid #555;
-  border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-  user-select: none;
 }
-.cw-stage { position: relative; touch-action: none; cursor: crosshair; }
-.cw-layer { position: absolute; left: 0; top: 0; pointer-events: none; }
-.cw-handle {
-  position: absolute;
-  width: 22px;
-  height: 22px;
-  margin: -11px 0 0 -11px;
-  border-radius: 50%;
-  border: 4px solid #d8d8e0;
-  box-sizing: border-box;
-  box-shadow: 0 0 3px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
-.cw-hex { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.cw-swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid #777; }
-.cw-hex input {
-  width: 90px;
-  padding: 4px 6px;
-  background: #2b2b2b;
-  border: 1px solid #555;
-  border-radius: 5px;
-  color: #fff;
-  font: 14px "Segoe UI", sans-serif;
-}
-
 
 /* ---- Tab: 모든 UI 숨기기 ---- */
 /* 제목 표시줄은 숨겨도 맨 위에 마우스를 올리면 덮어서 나타난다 */
@@ -284,7 +261,14 @@ body,
   color: #d4d4d8;
   font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
 }
-.px-info { font-weight: 600; margin-right: 4px; white-space: nowrap; }
+.px-info { display: flex; align-items: center; gap: 4px; font-weight: 600; margin-right: 4px; white-space: nowrap; }
+.px-size {
+  width: 46px; height: 26px; padding: 0 4px; text-align: center;
+  background: #1b1b20; color: inherit; font: inherit; border: 1px solid #44444c; border-radius: 5px;
+  -moz-appearance: textfield;
+}
+.px-size::-webkit-inner-spin-button, .px-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.px-size:focus { outline: none; border-color: #a8a5ff; }
 .px-sep { width: 1px; height: 18px; margin: 0 4px; background: #3e3e46; }
 .px-btn {
   height: 28px;
@@ -330,14 +314,14 @@ body,
   position: fixed; /* 가운데의 판을 가리지 않도록 화면 오른쪽에 둔다 */
   right: 24px;
   bottom: 150px;
-  padding: 12px;
-  background: #3a3a3a;
-  border: 1px solid #555;
-  border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
 }
-.px-palette { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 10px; }
-.px-palette .px-chip { width: 100%; height: 26px; }
+.px-palette {
+  display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 6px;
+  border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden;
+}
+.px-palette .px-chip { width: 100%; height: 22px; border: 0; border-radius: 0; }
+.px-palette .px-chip.on { outline: 0; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px rgba(0,0,0,.4); }
+.px-palette .px-chip:hover { transform: none; filter: brightness(1.15); }
 
 /* 새 픽셀판 창 */
 .pxdlg-back {
@@ -397,3 +381,36 @@ body.px-board-selected .HintViewer {
   .tb-sep { margin: 0 1px; }
   .tb-win .tb-btn { width: 34px; }
 }
+
+/* ---- 색상 선택기 (스펙트럼 · 색조 · hex · 저장한 색) ---- */
+/* 메뉴·픽셀판 바와 같은 톤(#232329 / #3a3a42)을 쓰고, 칸끼리는 틈 없이 붙인다 */
+.cp { width: 232px; user-select: none; color: #d6d6de; font: 12px "Segoe UI", "Malgun Gothic", sans-serif; }
+.cp-spectrum { border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden; }
+.cp-sv {
+  position: relative; height: 150px; cursor: crosshair; touch-action: none;
+  background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+}
+.cp-bar { position: relative; height: 14px; cursor: pointer; touch-action: none; border-top: 1px solid #3a3a42; }
+.cp-hue { background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00); }
+.cp-knob {
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.5); pointer-events: none;
+}
+.cp-bar .cp-knob { top: 50%; }
+.cp-row { display: flex; height: 28px; margin-top: 6px; border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden; }
+.cp-current { flex: none; width: 34px; border-right: 1px solid #3a3a42; }
+.cp-current span { display: block; width: 100%; height: 100%; }
+.cp-hex {
+  flex: 1; min-width: 0; padding: 0 8px; border: 0; outline: 0;
+  background: #1b1b20; color: #e6e6ee; font: 13px Consolas, "Segoe UI", monospace;
+}
+.cp-saved {
+  display: grid; grid-template-columns: repeat(8, 1fr); grid-auto-rows: 22px; gap: 4px; margin-top: 6px;
+  padding: 4px; border: 1px solid #3a3a42; border-radius: 8px;
+}
+.cp-slot, .cp-save { padding: 0; border: 0; border-radius: 5px; background: #1b1b20; }
+button.cp-slot { cursor: pointer; }
+button.cp-slot:hover { filter: brightness(1.15); }
+.cp-slot.edit { box-shadow: 0 0 0 2px #f5b400, inset 0 0 0 2px #fff; }
+.cp-save { color: #a0a0aa; font: 16px/1 "Segoe UI", sans-serif; cursor: pointer; }
+.cp-save:hover { background: #2a2a32; color: #fff; }

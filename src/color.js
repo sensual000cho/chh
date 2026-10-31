@@ -51,6 +51,4 @@ export const BG_PRESETS = [
   { name: "연한 회색", color: "#d9d9d9" },
   { name: "흰색", color: "#ffffff" },
   { name: "남색", color: "#0f1b2e" },
-  { name: "짙은 녹색", color: "#14241a" },
-  { name: "갈색", color: "#2b1d14" },
 ];

@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { MAX_SIZE } from "./board.js";
+import { MAX_SIZE, clampSize } from "./board.js";
 
 const PRESETS = [8, 16, 32, 64, 128];
-
-const clampSize = (v) => Math.max(1, Math.min(MAX_SIZE, Math.round(Number(v) || 1)));
 
 // 새 픽셀판 크기를 정하는 작은 창
 export default function PixelDialog({ onCreate, onClose }) {
