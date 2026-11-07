@@ -40,6 +40,9 @@ export function loadImage(src) {
   });
 }
 
+// 붙여넣은 글자가 http(s) 주소 하나뿐인가
+export const isHttpUrl = (text) => /^https?:\/\/\S+$/i.test((text || "").trim());
+
 const mimeOfDataURL = (url) => /^data:([^;,]+)/.exec(url)?.[1] || "";
 
 // dataURL 을 Excalidraw 가 지원하는 형식으로 맞추고 크기를 알아낸다.

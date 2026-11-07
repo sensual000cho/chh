@@ -13,23 +13,31 @@
     "electron": "electron .",
     "electron:dev": "cross-env CHH_DEV=1 electron .",
     "dist": "npm run build && electron-builder --win portable nsis && node scripts/publish.mjs",
-    "gen:dark-css": "node scripts/gen-dark-css.mjs"
+    "gen:dark-css": "node scripts/gen-dark-css.mjs",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "test:e2e": "npm run build && node tests/e2e.mjs"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@excalidraw/excalidraw": "^0.18.1",
-    "@vitejs/plugin-react": "^5.0.0",
-    "cross-env": "^7.0.3",
-    "electron": "38.8.6",
-    "electron-builder": "^26.15.3",
-    "postcss": "^8.5.30",
+    "@vitejs/plugin-react": "^6.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "45.2.3",
+    "electron-builder": "^26.18.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "postcss": "^8.5.32",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "vite": "^8.3.4"
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
   },
   "allowScripts": {
-    "electron@38.8.6": true,
     "esbuild@0.28.2": true,
-    "electron-winstaller@5.4.0": true
+    "electron-winstaller@5.4.0": true,
+    "electron@45.2.3": true
   },
   "build": {
     "appId": "com.chh.app",
@@ -40,6 +48,7 @@
     "files": [
       "dist/**",
       "electron/**",
+      "build/icon.png",
       "package.json"
     ],
     "win": {
@@ -60,6 +69,21 @@
     "electronLanguages": [
       "ko",
       "en-US"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "chh",
+        "name": "CHH 보드",
+        "description": "CHH 레퍼런스 보드",
+        "role": "Editor"
+      }
     ]
+  },
+  "overrides": {
+    "lodash-es": "^4.17.23",
+    "nanoid": "^3.3.8",
+    "@excalidraw/mermaid-to-excalidraw": {
+      "nanoid": "^5.1.16"
+    }
   }
 }

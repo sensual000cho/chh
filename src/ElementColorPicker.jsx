@@ -63,6 +63,8 @@ export default function ElementColorPicker({ api, target }) {
       paint((id) => original.current.get(id), CaptureUpdateAction.NEVER);
       paint(last.current, CaptureUpdateAction.IMMEDIATELY);
     },
+    // 닫힐 때 한 번만 실행한다. paint 는 ref 와 api 만 쓰므로 첫 렌더의 함수로 충분하다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [api],
   );
 

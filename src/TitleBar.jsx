@@ -13,6 +13,8 @@ const icons = {
   image: svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 9" /></>),
   pixel: svg(<><rect x="4" y="4" width="16" height="16" rx="1" /><path d="M4 12h16M12 4v16M8 4v16M16 4v16M4 8h16M4 16h16" strokeWidth="1" /></>),
   pin: svg(<><path d="M9 4h6l-1 6 3 3H7l3-3z" /><path d="M12 13v8" /></>),
+  arrange: svg(<><rect x="3" y="3" width="8" height="11" rx="1" /><rect x="13" y="3" width="8" height="6" rx="1" /><rect x="13" y="11" width="8" height="10" rx="1" /><rect x="3" y="16" width="8" height="5" rx="1" /></>),
+  through: svg(<><path d="M5 3l6 16 2.5-6.5L20 10z" /><path d="M16 16l4 4" /></>),
   opacity: svg(<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />),
   min: svg(<path d="M5 12h14" />),
   max: svg(<rect x="5" y="5" width="14" height="14" rx="1" />),
@@ -33,7 +35,19 @@ function Btn({ title, onClick, active, danger, children, label }) {
   );
 }
 
-export default function TitleBar({ name, dirty, onOpen, onSave, onCapture, onImport, onNewPixel }) {
+export default function TitleBar({
+  name,
+  dirty,
+  captureKey,
+  clickThrough,
+  onToggleClickThrough,
+  onArrange,
+  onOpen,
+  onSave,
+  onCapture,
+  onImport,
+  onNewPixel,
+}) {
   const chh = window.chh;
   const [maximized, setMaximized] = useState(false);
   const [onTop, setOnTop] = useState(() => localStorage.getItem("chh.onTop") === "1");
@@ -44,7 +58,12 @@ export default function TitleBar({ name, dirty, onOpen, onSave, onCapture, onImp
   const [showOpacity, setShowOpacity] = useState(false);
   const popRef = useRef(null);
 
-  useEffect(() => chh?.onWindowState(({ maximized }) => setMaximized(maximized)), [chh]);
+  useEffect(() => {
+    if (!chh) return;
+    // 최대화 상태로 시작하면 알림이 페이지가 뜨기 전에 지나가므로 직접 물어본다
+    chh.isMaximized?.().then(setMaximized);
+    return chh.onWindowState(({ maximized }) => setMaximized(maximized));
+  }, [chh]);
 
   useEffect(() => {
     chh?.setAlwaysOnTop(onTop);
@@ -79,12 +98,20 @@ export default function TitleBar({ name, dirty, onOpen, onSave, onCapture, onImp
         <Btn title="보드 열기 (Ctrl+O)" onClick={onOpen}>{icons.open}</Btn>
         <Btn title="저장 (Ctrl+S)" onClick={onSave}>{icons.save}</Btn>
         <span className="tb-sep" />
-        <Btn title="화면 캡처 (Ctrl+Shift+X)" onClick={onCapture} label="캡처">{icons.capture}</Btn>
+        <Btn title={`화면 캡처 (${captureKey || "Ctrl+Shift+X"})`} onClick={onCapture} label="캡처">{icons.capture}</Btn>
         <Btn title="이미지 가져오기 (파일 선택 · 끌어다 놓기 · 붙여넣기)" onClick={onImport} label="이미지">{icons.image}</Btn>
         <Btn title="새 픽셀판 만들기" onClick={onNewPixel} label="픽셀판">{icons.pixel}</Btn>
+        <Btn title="이미지 자동 정렬 (선택한 이미지, 없으면 전체)" onClick={onArrange}>{icons.arrange}</Btn>
         <span className="tb-sep" />
         <Btn title={onTop ? "항상 위 끄기" : "항상 위"} active={onTop} onClick={() => setOnTop((v) => !v)}>
           {icons.pin}
+        </Btn>
+        <Btn
+          title="클릭 통과: 창을 띄운 채 아래 프로그램을 조작합니다 (Ctrl+Shift+L로 해제)"
+          active={clickThrough}
+          onClick={onToggleClickThrough}
+        >
+          {icons.through}
         </Btn>
         <div className="tb-pop-wrap" ref={popRef}>
           <Btn title="창 투명도" active={showOpacity || opacity < 1} onClick={() => setShowOpacity((v) => !v)}>

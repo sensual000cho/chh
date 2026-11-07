@@ -16,13 +16,24 @@ contextBridge.exposeInMainWorld("chh", {
   dragStart: () => ipcRenderer.send("win:drag-start"),
   dragStop: () => ipcRenderer.send("win:drag-stop"),
   onWindowState: (cb) => on("window-state", cb),
+  isMaximized: () => ipcRenderer.invoke("win:is-maximized"),
+  setClickThrough: (on) => ipcRenderer.invoke("win:click-through", on),
+  onClickThrough: (cb) => on("click-through", cb),
+  onCloseRequest: (cb) => on("app:close-request", cb),
+  closeAck: () => ipcRenderer.send("app:close-ack"),
+  closeResponse: (ok) => ipcRenderer.send("app:close-response", ok),
 
   // 파일
   openDialog: () => ipcRenderer.invoke("file:open-dialog"),
   readFile: (p) => ipcRenderer.invoke("file:read", p),
   save: (args) => ipcRenderer.invoke("file:save", args),
-  autosaveWrite: (content) => ipcRenderer.invoke("file:autosave-write", content),
+  askUnsaved: (name) => ipcRenderer.invoke("file:ask-unsaved", name),
+  autosaveWrite: (content, meta) => ipcRenderer.invoke("file:autosave-write", content, meta),
+  autosaveWriteMeta: (meta) => ipcRenderer.invoke("file:autosave-write-meta", meta),
   autosaveRead: () => ipcRenderer.invoke("file:autosave-read"),
+  autosaveArchive: () => ipcRenderer.invoke("file:autosave-archive"),
+  autosaveClear: () => ipcRenderer.invoke("file:autosave-clear"),
+  openBackups: () => ipcRenderer.send("file:open-backups"),
   exportImages: (images) => ipcRenderer.invoke("file:export-images", images),
   saveImage: (args) => ipcRenderer.invoke("file:save-image", args),
   pendingOpen: () => ipcRenderer.invoke("app:pending-open"),
@@ -37,7 +48,14 @@ contextBridge.exposeInMainWorld("chh", {
 
   // 캡처
   startCapture: () => ipcRenderer.send("capture:start"),
+  getCaptureShortcut: () => ipcRenderer.invoke("capture:get-shortcut"),
   setCaptureShortcut: (accel) => ipcRenderer.invoke("capture:set-shortcut", accel),
   onCaptureResult: (cb) => on("capture-result", cb),
   onToast: (cb) => on("toast", cb),
+
+  // 자동 점검용 (패키징되지 않은 실행에서 CHH_TEST 를 줬을 때만 true)
+  testMode: process.argv.includes("--chh-test"),
+  testPaste: (text) => ipcRenderer.invoke("test:paste", text),
+  testCopy: () => ipcRenderer.invoke("test:copy"),
+  testClipboardImage: () => ipcRenderer.invoke("test:clipboard-image"),
 });

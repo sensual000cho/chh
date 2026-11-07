@@ -1,5 +1,6 @@
 // 픽셀판: Excalidraw 이미지 요소 + customData.chhPixel = { w, h, data } 로 표현한다.
-//  - data      : w×h 짜리 원본 픽셀 PNG(dataURL). 편집/내보내기의 기준 데이터.
+//  - data      : w×h 짜리 원본 픽셀 PNG(dataURL). 보이는 레이어를 합친 결과로, 내보내기의 기준 데이터.
+//  - layers    : [{ id, name, visible, data }] 아래층부터 위층 순서. 없으면(예전 파일) data 한 장짜리 레이어로 본다.
 //  - 요소의 이미지(fileId): 화면에 선명하게 보이도록 정수배로 키우고 체크무늬를 깐 "표시용" 이미지.
 // 요소는 일반 이미지처럼 이동/크기 조절/삭제/저장/열기가 된다.
 import { convertToExcalidrawElements, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
@@ -7,6 +8,7 @@ import { loadImage } from "../images.js";
 
 export const PIXEL_KEY = "chhPixel";
 export const MAX_SIZE = 512;
+export const SCALES = [1, 2, 4, 8, 16, 32];
 export const clampSize = (v) => Math.max(1, Math.min(MAX_SIZE, Math.round(Number(v) || 1)));
 
 export const isPixelBoard = (el) =>
@@ -30,6 +32,29 @@ export async function loadRaw(dataURL, w, h) {
     ctx.drawImage(img, 0, 0, w, h);
   }
   return c;
+}
+
+// 레이어 목록을 캔버스로 불러온다 (아래층부터)
+export async function loadLayers(info) {
+  const { w, h, data, layers } = info;
+  const list = layers?.length ? layers : [{ id: "l1", name: "레이어 1", visible: true, data }];
+  return Promise.all(
+    list.map(async (l) => ({ id: l.id, name: l.name, visible: l.visible !== false, canvas: await loadRaw(l.data, w, h) })),
+  );
+}
+
+// 보이는 레이어를 한 장으로 합친다
+export function flatten(layers, w, h) {
+  const raw = newCanvas(w, h);
+  const ctx = raw.getContext("2d");
+  for (const l of layers) if (l.visible) ctx.drawImage(l.canvas, 0, 0);
+  return raw;
+}
+
+// 긴 변이 512px 안에 드는 가장 큰 배율
+export function fitExportScale(w, h) {
+  const fit = SCALES.filter((s) => Math.max(w, h) * s <= 512);
+  return fit.length ? fit[fit.length - 1] : 1;
 }
 
 // 체크무늬 한 칸의 크기(픽셀 단위): 판이 클수록 크게
@@ -105,19 +130,20 @@ export function createBoard(api, w, h) {
 
 // 편집한 픽셀을 요소에 반영한다 (원본 데이터 + 표시용 이미지)
 // 가로/세로 픽셀 수가 바뀌었으면 한 칸 크기는 그대로 두고 요소 크기를 늘리거나 줄인다 (왼쪽 위 기준)
-export function commitBoard(api, id, raw) {
+// raw: 합쳐진 이미지, layers: [{ id, name, visible, data }]
+export function commitBoard(api, id, raw, layers) {
   const fileId = `pxl_${Date.now()}_${uid()}`;
   api.addFiles([{ id: fileId, dataURL: bake(raw), mimeType: "image/png", created: Date.now() }]);
   const data = raw.toDataURL("image/png");
   api.updateScene({
-    elements: api.getSceneElements().map((e) =>
+    elements: api.getSceneElementsIncludingDeleted().map((e) =>
       e.id === id
         ? {
             ...e,
             width: (e.width / pixelInfo(e).w) * raw.width,
             height: (e.height / pixelInfo(e).h) * raw.height,
             fileId,
-            customData: { ...e.customData, [PIXEL_KEY]: { w: raw.width, h: raw.height, data } },
+            customData: { ...e.customData, [PIXEL_KEY]: { w: raw.width, h: raw.height, data, layers } },
             version: e.version + 1,
             versionNonce: Math.floor(Math.random() * 2 ** 31),
             updated: Date.now(),
@@ -149,4 +175,21 @@ export function boardAt(elements, sx, sy) {
     };
   }
   return null;
+}
+
+// 화면에 그려진 보드에서 한 점의 색을 읽는다 (옆에 놓은 레퍼런스 이미지에서 색을 가져올 때). 읽을 수 없으면 null.
+export function pickSceneColor(clientX, clientY) {
+  const c = document.querySelector(".excalidraw canvas.excalidraw__canvas.static");
+  if (!c) return null;
+  const r = c.getBoundingClientRect();
+  const x = Math.floor(((clientX - r.left) * c.width) / r.width);
+  const y = Math.floor(((clientY - r.top) * c.height) / r.height);
+  if (x < 0 || y < 0 || x >= c.width || y >= c.height) return null;
+  try {
+    const [cr, cg, cb, ca] = c.getContext("2d").getImageData(x, y, 1, 1).data;
+    if (ca === 0) return null;
+    return "#" + [cr, cg, cb].map((v) => v.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return null;
+  }
 }

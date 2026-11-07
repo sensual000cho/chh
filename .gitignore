@@ -22,3 +22,7 @@ LICENSES.chromium.html
 *.log
 .DS_Store
 Thumbs.db
+
+# 개인 작업 보드 (이미지가 들어 있어 용량이 큼)
+저장보드/
+*.chh

@@ -4,37 +4,48 @@ import ColorPicker from "../ColorPicker.jsx";
 import { hexToRgb } from "../color.js";
 import {
   CHECKER_COLORS,
+  SCALES,
   boardAt,
   checkerTile,
   clampSize,
   commitBoard,
   exportDataURL,
+  fitExportScale,
+  flatten,
   isPixelBoard,
+  loadLayers,
   loadRaw,
   MAX_SIZE,
   newCanvas,
+  pickSceneColor,
   pixelInfo,
 } from "./board.js";
+import { bresenham, fillData, inRect, mirrorStamps, normalizeRect, rectFilled, rectOutline } from "./tools.js";
 
 const chh = window.chh;
 
 const TOOLS = [
-  { id: "brush", label: "브러시", key: "b" },
-  { id: "eraser", label: "지우개", key: "e" },
-  { id: "picker", label: "스포이드", key: "i" },
-  { id: "fill", label: "채우기", key: "g" },
+  { id: "brush", label: "브러시", key: "b", hint: "브러시 (B)" },
+  { id: "eraser", label: "지우개", key: "e", hint: "지우개 (E)" },
+  { id: "picker", label: "스포이드", key: "i", hint: "스포이드 (I, Alt+클릭). 판 밖의 레퍼런스 이미지에서도 색을 가져옵니다" },
+  { id: "fill", label: "채우기", key: "g", hint: "채우기 (G)" },
+  { id: "line", label: "직선", key: "l", hint: "직선 (L)" },
+  { id: "rect", label: "사각형", key: "r", hint: "사각형 (R). Shift를 누르면 속을 채웁니다" },
+  { id: "select", label: "선택", key: "m", hint: "선택 (M). 드래그로 영역을 잡고, 안쪽을 끌면 이동, Delete로 지우기" },
 ];
-const SCALES = [1, 2, 4, 8, 16, 32];
 const PALETTE = [
   "#000000", "#1d2b53", "#7e2553", "#008751", "#ab5236", "#5f574f", "#c2c3c7", "#fff1e8",
   "#ff004d", "#ffa300", "#ffec27", "#00e436", "#29adff", "#83769c", "#ff77a8", "#ffccaa",
 ];
 const RECENT_KEY = "chh.pixel.recent";
 const UNDO_LIMIT = 40;
+const MAX_LAYERS = 16;
 const COMMIT_DELAY = 300; // 마지막 획 후 이만큼 지나면 Excalidraw 요소에 반영 (ms)
 
 // 되돌리기/스포이드/채우기가 픽셀을 자주 읽으므로 CPU 쪽 캔버스로 만든다
 const ctx2d = (c) => c.getContext("2d", { willReadFrequently: true });
+
+const uid = () => Math.random().toString(36).slice(2, 10);
 
 function loadRecent() {
   try {
@@ -88,69 +99,35 @@ function SizeInput({ value, onCommit, title }) {
   );
 }
 
-function bresenham(x0, y0, x1, y1, fn) {
-  const dx = Math.abs(x1 - x0);
-  const dy = -Math.abs(y1 - y0);
-  const sx = x0 < x1 ? 1 : -1;
-  const sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
-  for (;;) {
-    fn(x0, y0);
-    if (x0 === x1 && y0 === y1) break;
-    const e2 = 2 * err;
-    if (e2 >= dy) {
-      err += dy;
-      x0 += sx;
-    }
-    if (e2 <= dx) {
-      err += dx;
-      y0 += sy;
-    }
-  }
-}
-
-// 4방향 채우기. 바뀐 픽셀 수를 돌려준다.
-// src(이미 읽어둔 ImageData)를 주면 캔버스에서 다시 읽지 않고 그 복사본으로 작업한다.
-function floodFill(ctx, w, h, sx, sy, [r, g, b], src) {
-  if (sx < 0 || sy < 0 || sx >= w || sy >= h) return 0;
-  const img = src
-    ? new ImageData(new Uint8ClampedArray(src.data), w, h)
-    : ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  const at = (x, y) => (y * w + x) * 4;
-  const i0 = at(sx, sy);
-  const t = [d[i0], d[i0 + 1], d[i0 + 2], d[i0 + 3]];
-  if (t[0] === r && t[1] === g && t[2] === b && t[3] === 255) return 0;
-  const match = (i) => d[i] === t[0] && d[i + 1] === t[1] && d[i + 2] === t[2] && d[i + 3] === t[3];
-  const stack = [sx, sy];
-  let n = 0;
-  while (stack.length) {
-    const y = stack.pop();
-    const x = stack.pop();
-    const i = at(x, y);
-    if (!match(i)) continue;
-    d[i] = r;
-    d[i + 1] = g;
-    d[i + 2] = b;
-    d[i + 3] = 255;
-    n++;
-    if (x > 0) stack.push(x - 1, y);
-    if (x < w - 1) stack.push(x + 1, y);
-    if (y > 0) stack.push(x, y - 1);
-    if (y < h - 1) stack.push(x, y + 1);
-  }
-  ctx.putImageData(img, 0, 0);
-  return n;
-}
-
 const isTyping = (t) =>
   t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
-export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
+function makeLayer({ id, name, visible }, w, h) {
+  const canvas = newCanvas(w, h);
+  return { id, name, visible, canvas, ctx: ctx2d(canvas), snap: null };
+}
+
+// ImageData 하나의 PNG 는 내용이 안 바뀌는 한 다시 만들지 않는다
+const pngCache = new WeakMap();
+function imgToCanvas(img) {
+  const c = newCanvas(img.width, img.height);
+  c.getContext("2d").putImageData(img, 0, 0);
+  return c;
+}
+function imgToPng(img) {
+  let url = pngCache.get(img);
+  if (!url) {
+    url = imgToCanvas(img).toDataURL("image/png");
+    pngCache.set(img, url);
+  }
+  return url;
+}
+
+export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone, flushRef }) {
   const [view, setView] = useState(null);
   const [board, setBoard] = useState(null); // 선택된 픽셀판 요소
   const [editingId, setEditingId] = useState(null);
-  const [tool, setTool] = useState("brush");
+  const [tool, setToolState] = useState("brush");
   const [size, setSize] = useState(1);
   const [color, setColor] = useState("#ff004d");
   const [grid, setGrid] = useState(true);
@@ -159,14 +136,34 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   const [hover, setHover] = useState(null);
   const [stack, setStack] = useState({ undo: 0, redo: 0 });
   const [exportScale, setExportScale] = useState(8);
+  const [mirrorX, setMirrorX] = useState(false);
+  const [mirrorY, setMirrorY] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
+  const [layerInfo, setLayerInfo] = useState({ list: [], active: 0 });
+  const [sel, setSelState] = useState(null); // 선택 영역 (픽셀 좌표)
+  const [panReady, setPanReady] = useState(false); // 스페이스를 누르고 있는 동안
 
-  const canvasRef = useRef(null);
+  const canvasRef = useRef(null); // 화면에 보이는 합성 결과
+  const previewRef = useRef(null); // 직선/사각형 미리보기, 옮기는 중인 선택 영역
+  const layersRef = useRef([]); // [{ id, name, visible, canvas, ctx, snap }]
+  const activeRef = useRef(0);
   const undoRef = useRef([]);
   const redoRef = useRef([]);
-  const drawing = useRef(null);
+  const drawing = useRef(null); // 지금 하고 있는 드래그 동작
+  const panRef = useRef(null);
+  const spaceRef = useRef(false);
+  const selRef = useRef(null);
+  const floatRef = useRef(null); // 들어 올린 선택 영역의 픽셀
   const ready = useRef(false);
+  const editIdRef = useRef(null); // 그리기를 끝낸 뒤에도 남은 변경을 어느 판에 넣을지 기억한다
+  const compositeFrame = useRef(0);
   const live = useRef({});
-  live.current = { tool, size, color, board, editingId, colorOpen };
+  live.current = { tool, size, color, board, editingId, colorOpen, mirrorX, mirrorY };
+
+  const setSel = (r) => {
+    selRef.current = r;
+    setSelState(r);
+  };
 
   // ---- Excalidraw 상태 구독: 화면 이동/확대, 선택된 픽셀판 ----
   useEffect(() => {
@@ -215,8 +212,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   useEffect(() => {
     if (!board) return;
     const { w, h } = pixelInfo(board);
-    const fit = SCALES.filter((s) => Math.max(w, h) * s <= 512);
-    setExportScale(fit.length ? fit[fit.length - 1] : 1);
+    setExportScale(fitExportScale(w, h));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardKey]);
 
@@ -272,60 +268,182 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     };
   }, [api, board, editingId, startEdit]);
 
-  // ---- 그리기 모드: 픽셀 버퍼 불러오기 (판 크기가 바뀌어도 다시 불러온다) ----
+  const syncStack = () => setStack({ undo: undoRef.current.length, redo: redoRef.current.length });
+  const syncLayers = () =>
+    setLayerInfo({
+      list: layersRef.current.map(({ id, name, visible }) => ({ id, name, visible })),
+      active: activeRef.current,
+    });
+
+  const composite = useCallback(() => {
+    if (compositeFrame.current) cancelAnimationFrame(compositeFrame.current);
+    compositeFrame.current = 0;
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = ctx2d(c);
+    ctx.clearRect(0, 0, c.width, c.height);
+    for (const l of layersRef.current) if (l.visible) ctx.drawImage(l.canvas, 0, 0);
+  }, []);
+
+  const requestComposite = () => {
+    if (!compositeFrame.current) compositeFrame.current = requestAnimationFrame(composite);
+  };
+
+  // ---- 그리기 모드: 레이어 불러오기 (판 크기가 바뀌어도 다시 불러온다) ----
   const boardDims = board ? `${pixelInfo(board).w}x${pixelInfo(board).h}` : "";
   useEffect(() => {
     if (!editingId || !api) return;
     ready.current = false;
     undoRef.current = [];
     redoRef.current = [];
-    setStack({ undo: 0, redo: 0 });
+    syncStack();
     const el = api.getSceneElements().find((e) => e.id === editingId);
     if (!el) return;
-    const { w, h, data } = pixelInfo(el);
+    const info = pixelInfo(el);
+    editIdRef.current = editingId;
     let cancelled = false;
-    loadRaw(data, w, h).then((raw) => {
-      const c = canvasRef.current;
-      if (cancelled || !c) return;
-      const ctx = ctx2d(c);
-      ctx.clearRect(0, 0, w, h);
-      ctx.drawImage(raw, 0, 0);
+    loadLayers(info).then((loaded) => {
+      if (cancelled) return;
+      layersRef.current = loaded.map((l) => {
+        const layer = makeLayer(l, info.w, info.h);
+        layer.ctx.drawImage(l.canvas, 0, 0);
+        return layer;
+      });
+      activeRef.current = Math.max(0, layersRef.current.length - 1);
+      syncLayers();
+      composite();
       ready.current = true;
     });
     return () => {
       cancelled = true;
       ready.current = false;
     };
-  }, [editingId, api, boardDims]);
+  }, [editingId, api, boardDims, composite]);
 
-  const syncStack = () => setStack({ undo: undoRef.current.length, redo: redoRef.current.length });
+  // ---- 되돌리기 기록: 레이어별 ImageData 를 찍어 둔다. 안 바뀐 레이어는 같은 ImageData 를 함께 쓴다 ----
+  const snapshot = useCallback(() => {
+    const list = layersRef.current;
+    return {
+      active: activeRef.current,
+      layers: list.map((l) => {
+        if (!l.snap) l.snap = l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height);
+        return { id: l.id, name: l.name, visible: l.visible, img: l.snap };
+      }),
+    };
+  }, []);
 
-  // 획마다 PNG 를 두 번 인코딩하면 느리므로, 마지막 획 뒤에 한 번만 요소에 반영한다.
-  // 대기 중인 픽셀은 ImageData 로 따로 보관해서 캔버스가 사라져도 잃지 않는다.
-  const pendingRef = useRef(null); // { id, img }
+  const restore = useCallback(
+    (snap) => {
+      layersRef.current = snap.layers.map((s) => {
+        const l = makeLayer(s, s.img.width, s.img.height);
+        l.ctx.putImageData(s.img, 0, 0);
+        l.snap = s.img;
+        return l;
+      });
+      activeRef.current = snap.active;
+      syncLayers();
+      composite();
+    },
+    [composite],
+  );
+
+  const activeLayer = () => layersRef.current[activeRef.current];
+
+  // 변경 직전에 호출한다. 이후 활성 레이어의 snap 은 무효가 된다.
+  const pushUndo = useCallback(() => {
+    undoRef.current.push(snapshot());
+    if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
+    redoRef.current = [];
+    syncStack();
+    const l = layersRef.current[activeRef.current];
+    if (l) l.snap = null;
+  }, [snapshot]);
+
+  // 획마다 PNG 를 인코딩하면 느리므로, 마지막 획 뒤에 한 번만 요소에 반영한다.
+  // 대기 중인 픽셀은 스냅샷으로 따로 보관해서 그리기가 끝나도 잃지 않는다.
+  const pendingRef = useRef(null); // { id, snap }
   const commitTimer = useRef(0);
 
   const flushCommit = useCallback(() => {
     clearTimeout(commitTimer.current);
     const p = pendingRef.current;
     pendingRef.current = null;
-    if (!p || !api) return;
-    const raw = newCanvas(p.img.width, p.img.height);
-    raw.getContext("2d").putImageData(p.img, 0, 0);
-    commitBoard(api, p.id, raw);
+    if (!p || !api || !p.snap.layers.length) return;
+    const { width: w, height: h } = p.snap.layers[0].img;
+    const raw = flatten(
+      p.snap.layers.map((l) => ({ visible: l.visible, canvas: imgToCanvas(l.img) })),
+      w,
+      h,
+    );
+    const meta = p.snap.layers.map((l) => ({ id: l.id, name: l.name, visible: l.visible, data: imgToPng(l.img) }));
+    commitBoard(api, p.id, raw, meta);
   }, [api]);
 
   const commit = useCallback(() => {
-    const c = canvasRef.current;
-    const id = live.current.editingId;
-    if (!c || !id) return;
-    pendingRef.current = { id, img: ctx2d(c).getImageData(0, 0, c.width, c.height) };
+    const id = editIdRef.current;
+    if (!id || !layersRef.current.length) return;
+    pendingRef.current = { id, snap: snapshot() };
     clearTimeout(commitTimer.current);
     commitTimer.current = setTimeout(flushCommit, COMMIT_DELAY);
-  }, [flushCommit]);
+  }, [flushCommit, snapshot]);
+
+  const clearPreview = () => {
+    const p = previewRef.current;
+    if (p) ctx2d(p).clearRect(0, 0, p.width, p.height);
+  };
+
+  // 옮기던 선택 영역을 레이어에 내려놓는다
+  const dropFloat = useCallback(() => {
+    const f = floatRef.current;
+    if (!f) return;
+    floatRef.current = null;
+    const l = layersRef.current[activeRef.current];
+    const r = selRef.current;
+    if (l && r) {
+      l.ctx.drawImage(f, r.x, r.y);
+      l.snap = null;
+    }
+    clearPreview();
+    composite();
+    commit();
+  }, [commit, composite]);
+
+  const flushAll = useCallback(() => {
+    dropFloat();
+    flushCommit();
+  }, [dropFloat, flushCommit]);
+
+  // 저장·닫기 직전에 App 이 호출한다
+  useEffect(() => {
+    if (!flushRef) return;
+    flushRef.current = flushAll;
+    return () => {
+      flushRef.current = null;
+    };
+  }, [flushRef, flushAll]);
 
   // 그리기 모드를 끝내거나 판이 바뀌거나 사라질 때 남은 변경을 반영한다
-  useEffect(() => flushCommit, [editingId, flushCommit]);
+  useEffect(() => {
+    if (!editingId) return;
+    return () => {
+      flushAll();
+      setSel(null);
+      spaceRef.current = false;
+      setPanReady(false);
+    };
+  }, [editingId, flushAll]);
+
+  const setTool = useCallback(
+    (t) => {
+      if (live.current.tool === "select" && t !== "select") {
+        dropFloat();
+        setSel(null);
+      }
+      live.current.tool = t;
+      setToolState(t);
+    },
+    [dropFloat],
+  );
 
   const pushRecent = useCallback((c) => {
     setRecent((prev) => {
@@ -352,15 +470,33 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     };
   };
 
-  const paint = (x, y) => {
-    const ctx = ctx2d(canvasRef.current);
-    const { tool: t, size: s, color: col } = live.current;
+  // 브러시 크기와 대칭을 적용해 한 점을 찍는다
+  const stamp = (ctx, x, y, erase) => {
+    const { size: s, color: col, mirrorX: mx, mirrorY: my } = live.current;
+    const c = canvasRef.current;
     const o = Math.floor(s / 2);
-    if (t === "eraser") ctx.clearRect(x - o, y - o, s, s);
-    else {
-      ctx.fillStyle = col;
-      ctx.fillRect(x - o, y - o, s, s);
+    if (!erase) ctx.fillStyle = col;
+    for (const [lx, ly] of mirrorStamps(x - o, y - o, s, c.width, c.height, mx, my)) {
+      if (erase) ctx.clearRect(lx, ly, s, s);
+      else ctx.fillRect(lx, ly, s, s);
     }
+  };
+
+  const drawShape = (ctx, d) => {
+    const fn = (x, y) => stamp(ctx, x, y, false);
+    if (d.mode === "line") bresenham(d.start.x, d.start.y, d.end.x, d.end.y, fn);
+    else if (d.shift) rectFilled(d.start, d.end, fn);
+    else rectOutline(d.start, d.end, fn);
+  };
+
+  const drawPreview = () => {
+    const p = previewRef.current;
+    if (!p) return;
+    const ctx = ctx2d(p);
+    ctx.clearRect(0, 0, p.width, p.height);
+    const d = drawing.current;
+    if (d?.mode === "line" || d?.mode === "rect") drawShape(ctx, d);
+    if (floatRef.current && selRef.current) ctx.drawImage(floatRef.current, selRef.current.x, selRef.current.y);
   };
 
   const clampPt = (p, c) => ({
@@ -371,6 +507,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
   const pickColor = (x, y) => {
     const c = canvasRef.current;
     if (x < 0 || y < 0 || x >= c.width || y >= c.height) return;
+    composite();
     const [r, g, b, a] = ctx2d(c).getImageData(x, y, 1, 1).data;
     if (a === 0) {
       setTool("eraser");
@@ -378,13 +515,49 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     }
     const hex = "#" + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
     setColor(hex);
-    setTool((t) => (t === "eraser" || t === "picker" ? "brush" : t));
+    const t = live.current.tool;
+    if (t === "eraser" || t === "picker") setTool("brush");
+  };
+
+  const liftSelection = () => {
+    if (floatRef.current) return;
+    const r = selRef.current;
+    const l = activeLayer();
+    pushUndo();
+    const f = newCanvas(r.w, r.h);
+    f.getContext("2d").drawImage(l.canvas, -r.x, -r.y);
+    l.ctx.clearRect(r.x, r.y, r.w, r.h);
+    floatRef.current = f;
+    composite();
+  };
+
+  const deleteSelection = () => {
+    const r = selRef.current;
+    if (!r) return;
+    if (floatRef.current) {
+      floatRef.current = null;
+      clearPreview();
+    } else {
+      pushUndo();
+      activeLayer().ctx.clearRect(r.x, r.y, r.w, r.h);
+    }
+    composite();
+    setSel(null);
+    commit();
   };
 
   const onPointerDown = (e) => {
+    const c = canvasRef.current;
+    // 가운데 버튼 또는 스페이스+드래그: 화면 이동
+    if (e.button === 1 || (e.button === 0 && spaceRef.current)) {
+      e.preventDefault();
+      c.setPointerCapture(e.pointerId);
+      const s = api.getAppState();
+      panRef.current = { x: e.clientX, y: e.clientY, scrollX: s.scrollX, scrollY: s.scrollY, zoom: s.zoom.value };
+      return;
+    }
     if (e.button !== 0 || !ready.current) return;
     e.preventDefault();
-    const c = canvasRef.current;
     c.setPointerCapture(e.pointerId);
     setColorOpen(false);
     const p = toPixel(e.clientX, e.clientY);
@@ -393,66 +566,216 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
       pickColor(p.x, p.y);
       return;
     }
-    const ctx = ctx2d(c);
-    const before = ctx.getImageData(0, 0, c.width, c.height);
+    const layer = activeLayer();
+    if (!layer) return;
+    if (!layer.visible) {
+      api.setToast({ message: "숨긴 레이어에는 그릴 수 없습니다.", duration: 2000 });
+      return;
+    }
+    if (t === "select") {
+      if (inRect(selRef.current, p)) {
+        liftSelection();
+        const r = selRef.current;
+        drawing.current = { mode: "sel-move", dx: p.x - r.x, dy: p.y - r.y };
+        drawPreview();
+      } else {
+        dropFloat();
+        setSel(null);
+        drawing.current = { mode: "sel-new", start: p };
+      }
+      return;
+    }
     if (t === "fill") {
       const rgb = hexToRgb(live.current.color) || [0, 0, 0];
-      if (floodFill(ctx, c.width, c.height, p.x, p.y, rgb, before)) {
+      const before = snapshot();
+      const { width: w, height: h } = layer.canvas;
+      const img = new ImageData(new Uint8ClampedArray(layer.snap.data), w, h);
+      let n = fillData(img.data, w, h, p.x, p.y, rgb);
+      const { mirrorX: mx, mirrorY: my } = live.current;
+      for (const [ax, ay] of mirrorStamps(p.x, p.y, 1, w, h, mx, my).slice(1)) {
+        n += fillData(img.data, w, h, ax, ay, rgb);
+      }
+      if (n) {
         undoRef.current.push(before);
-        redoRef.current = [];
         if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
+        redoRef.current = [];
         syncStack();
+        layer.ctx.putImageData(img, 0, 0);
+        layer.snap = null;
+        composite();
         pushRecent(live.current.color);
         commit();
       }
       return;
     }
-    undoRef.current.push(before);
-    redoRef.current = [];
-    if (undoRef.current.length > UNDO_LIMIT) undoRef.current.shift();
-    syncStack();
-    drawing.current = { last: p };
-    paint(p.x, p.y);
+    if (t === "line" || t === "rect") {
+      drawing.current = { mode: t, start: p, end: p, shift: e.shiftKey };
+      drawPreview();
+      return;
+    }
+    pushUndo();
+    drawing.current = { mode: "stroke", last: p, erase: t === "eraser" };
+    stamp(layer.ctx, p.x, p.y, t === "eraser");
+    composite();
   };
 
   const onPointerMove = (e) => {
-    if (!drawing.current) return;
+    if (panRef.current) {
+      const pan = panRef.current;
+      api.updateScene({
+        appState: {
+          scrollX: pan.scrollX + (e.clientX - pan.x) / pan.zoom,
+          scrollY: pan.scrollY + (e.clientY - pan.y) / pan.zoom,
+        },
+      });
+      return;
+    }
+    const d = drawing.current;
+    if (!d) return;
     const c = canvasRef.current;
-    const evs = e.nativeEvent.getCoalescedEvents?.();
-    for (const ev of evs?.length ? evs : [e.nativeEvent]) {
-      const p = clampPt(toPixel(ev.clientX, ev.clientY), c);
-      const l = clampPt(drawing.current.last, c);
-      bresenham(l.x, l.y, p.x, p.y, paint);
-      drawing.current.last = p;
+    if (d.mode === "stroke") {
+      const layer = activeLayer();
+      const evs = e.nativeEvent.getCoalescedEvents?.();
+      for (const ev of evs?.length ? evs : [e.nativeEvent]) {
+        const p = clampPt(toPixel(ev.clientX, ev.clientY), c);
+        const l = clampPt(d.last, c);
+        bresenham(l.x, l.y, p.x, p.y, (x, y) => stamp(layer.ctx, x, y, d.erase));
+        d.last = p;
+      }
+      requestComposite();
+      return;
+    }
+    const p = clampPt(toPixel(e.clientX, e.clientY), c);
+    if (d.mode === "line" || d.mode === "rect") {
+      d.end = p;
+      d.shift = e.shiftKey;
+      drawPreview();
+    } else if (d.mode === "sel-new") {
+      setSel(normalizeRect(d.start, p, c.width, c.height));
+    } else if (d.mode === "sel-move") {
+      const r = selRef.current;
+      setSel({ ...r, x: p.x - d.dx, y: p.y - d.dy });
+      drawPreview();
     }
   };
 
   const endStroke = () => {
-    if (!drawing.current) return;
+    if (panRef.current) {
+      panRef.current = null;
+      return;
+    }
+    const d = drawing.current;
+    if (!d) return;
     drawing.current = null;
-    if (live.current.tool === "brush") pushRecent(live.current.color);
-    commit();
+    if (d.mode === "line" || d.mode === "rect") {
+      pushUndo();
+      drawShape(activeLayer().ctx, d);
+      clearPreview();
+      composite();
+      pushRecent(live.current.color);
+      commit();
+    } else if (d.mode === "stroke") {
+      composite();
+      if (!d.erase) pushRecent(live.current.color);
+      commit();
+    }
+    // 선택 영역은 내려놓을 때 반영한다 (dropFloat)
   };
 
   const undo = useCallback(() => {
-    const c = canvasRef.current;
-    if (!c || !undoRef.current.length) return;
-    const ctx = ctx2d(c);
-    redoRef.current.push(ctx.getImageData(0, 0, c.width, c.height));
-    ctx.putImageData(undoRef.current.pop(), 0, 0);
+    if (!layersRef.current.length || !undoRef.current.length) return;
+    const lifted = !!floatRef.current;
+    floatRef.current = null;
+    clearPreview();
+    setSel(null);
+    // 들어 올린 상태는 다시 실행으로 되돌아올 수 없으므로 기록하지 않는다
+    if (!lifted) redoRef.current.push(snapshot());
+    restore(undoRef.current.pop());
     syncStack();
     commit();
-  }, [commit]);
+  }, [commit, restore, snapshot]);
 
   const redo = useCallback(() => {
-    const c = canvasRef.current;
-    if (!c || !redoRef.current.length) return;
-    const ctx = ctx2d(c);
-    undoRef.current.push(ctx.getImageData(0, 0, c.width, c.height));
-    ctx.putImageData(redoRef.current.pop(), 0, 0);
+    if (!layersRef.current.length || !redoRef.current.length) return;
+    dropFloat();
+    setSel(null);
+    undoRef.current.push(snapshot());
+    restore(redoRef.current.pop());
     syncStack();
     commit();
-  }, [commit]);
+  }, [commit, dropFloat, restore, snapshot]);
+
+  // ---- 레이어 조작 ----
+  const changeLayers = (fn) => {
+    dropFloat();
+    pushUndo();
+    fn();
+    syncLayers();
+    composite();
+    commit();
+  };
+  const addLayer = () => {
+    if (layersRef.current.length >= MAX_LAYERS) {
+      api.setToast({ message: `레이어는 ${MAX_LAYERS}개까지 만들 수 있습니다.`, duration: 2000 });
+      return;
+    }
+    changeLayers(() => {
+      const first = layersRef.current[0].canvas;
+      const name = `레이어 ${layersRef.current.length + 1}`;
+      const layer = makeLayer({ id: uid(), name, visible: true }, first.width, first.height);
+      layersRef.current = [...layersRef.current];
+      layersRef.current.splice(activeRef.current + 1, 0, layer);
+      activeRef.current += 1;
+    });
+  };
+  const removeLayer = () => {
+    if (layersRef.current.length < 2) return;
+    changeLayers(() => {
+      layersRef.current = layersRef.current.filter((_, i) => i !== activeRef.current);
+      activeRef.current = Math.min(activeRef.current, layersRef.current.length - 1);
+    });
+  };
+  const moveLayer = (delta) => {
+    const i = activeRef.current;
+    const j = i + delta;
+    if (j < 0 || j >= layersRef.current.length) return;
+    changeLayers(() => {
+      const list = [...layersRef.current];
+      [list[i], list[j]] = [list[j], list[i]];
+      layersRef.current = list;
+      activeRef.current = j;
+    });
+  };
+  const mergeDown = () => {
+    const i = activeRef.current;
+    if (i < 1) return;
+    changeLayers(() => {
+      const upper = layersRef.current[i];
+      const lower = layersRef.current[i - 1];
+      lower.ctx.drawImage(upper.canvas, 0, 0);
+      lower.snap = null;
+      layersRef.current = layersRef.current.filter((_, k) => k !== i);
+      activeRef.current = i - 1;
+    });
+  };
+  const toggleLayer = (index) =>
+    changeLayers(() => {
+      const l = layersRef.current[index];
+      l.visible = !l.visible;
+    });
+  const renameLayer = (index, name) => {
+    const l = layersRef.current[index];
+    if (!l || !name.trim() || name === l.name) return;
+    l.name = name.trim();
+    syncLayers();
+    commit();
+  };
+  const selectLayer = (index) => {
+    dropFloat();
+    setSel(null);
+    activeRef.current = index;
+    syncLayers();
+  };
 
   // 판 위에서의 휠(확대/이동)은 Excalidraw 캔버스로 넘긴다
   // (캔버스가 실제로 그려지는 동안에만 다시 붙이면 되므로 deps 를 둔다)
@@ -483,7 +806,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     return () => c.removeEventListener("wheel", onWheel);
   }, [canvasShown]);
 
-  // ---- 키보드 (그리기 모드일 때만) ----
+  // ---- 키보드 (그리기 모드일 때만): Excalidraw 단축키는 모두 막는다 (Delete 로 판이 지워지거나 R 로 그리기가 풀리지 않도록) ----
   useEffect(() => {
     if (!editingId) return;
     const onKey = (e) => {
@@ -492,39 +815,110 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
         e.preventDefault();
         e.stopImmediatePropagation();
       };
+      const k = e.key.toLowerCase();
+      if (e.key === " ") {
+        stop();
+        spaceRef.current = true;
+        setPanReady(true);
+        return;
+      }
       if (e.key === "Escape") {
         stop();
         if (live.current.colorOpen) setColorOpen(false);
-        else setEditingId(null);
+        else if (selRef.current) {
+          dropFloat();
+          setSel(null);
+        } else setEditingId(null);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-        const k = e.key.toLowerCase();
         if (k === "z") {
           stop();
-          e.shiftKey ? redo() : undo();
+          if (e.shiftKey) redo();
+          else undo();
         } else if (k === "y") {
           stop();
           redo();
+        } else if (k === "a") {
+          stop();
+          const c = canvasRef.current;
+          if (c && live.current.tool === "select") {
+            dropFloat();
+            setSel({ x: 0, y: 0, w: c.width, h: c.height });
+          }
+        } else if (!["s", "n", "o", "=", "+", "-", "0"].includes(k)) {
+          e.stopImmediatePropagation(); // 복사·붙여넣기 등 Excalidraw 동작을 막는다
         }
+        return; // 저장·열기·확대 단축키는 App / Excalidraw 로 넘긴다
+      }
+      if (e.key === "Tab" || /^F\d+$/.test(e.key)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        e.stopImmediatePropagation();
         return;
       }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const tl = TOOLS.find((t) => t.key === e.key.toLowerCase());
+      const tl = TOOLS.find((t) => t.key === k);
       if (tl) {
         stop();
-        live.current.tool = tl.id;
         setTool(tl.id);
       } else if (e.key === "[" || e.key === "]") {
         stop();
         const next = Math.max(1, Math.min(16, live.current.size + (e.key === "]" ? 1 : -1)));
         live.current.size = next;
         setSize(next);
+      } else if (k === "x") {
+        stop();
+        setMirrorX((v) => !v);
+      } else if (k === "y") {
+        stop();
+        setMirrorY((v) => !v);
+      } else if (e.key === "Delete" || e.key === "Backspace") {
+        stop();
+        deleteSelection();
+      } else if (e.key === "Enter") {
+        stop();
+        dropFloat();
+      } else {
+        stop();
       }
     };
+    const onKeyUp = (e) => {
+      if (e.key === " ") {
+        spaceRef.current = false;
+        setPanReady(false);
+      }
+    };
+    // 복사/붙여넣기 이벤트가 보드로 넘어가면 판 선택이 풀린다
+    const blockClipboard = (e) => {
+      if (!isTyping(e.target)) e.stopImmediatePropagation();
+    };
+    // 스포이드: 판 밖을 누르면 그리기를 끝내는 대신 화면에 보이는 색을 가져온다
+    const onDown = (e) => {
+      if (e.button !== 0 || !(live.current.tool === "picker" || e.altKey)) return;
+      if (e.target?.tagName !== "CANVAS" || e.target === canvasRef.current) return;
+      const hex = pickSceneColor(e.clientX, e.clientY);
+      if (!hex) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      setColor(hex);
+      if (live.current.tool === "picker") setTool("brush");
+    };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [editingId, undo, redo]);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("copy", blockClipboard, true);
+    window.addEventListener("cut", blockClipboard, true);
+    window.addEventListener("paste", blockClipboard, true);
+    window.addEventListener("pointerdown", onDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("copy", blockClipboard, true);
+      window.removeEventListener("cut", blockClipboard, true);
+      window.removeEventListener("paste", blockClipboard, true);
+      window.removeEventListener("pointerdown", onDown, true);
+    };
+    // deleteSelection 은 ref 만 쓰므로 매번 다시 붙일 필요가 없다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId, undo, redo, dropFloat, setTool]);
 
   // ---- 마우스를 올리면 가로×세로 크기 표시 ----
   useEffect(() => {
@@ -562,25 +956,33 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
 
   // ---- 판 크기 바꾸기: 기존 그림은 왼쪽 위에 그대로 두고 잘라내거나 투명하게 늘린다 ----
   const resize = async (nw, nh) => {
+    flushAll();
     const el = api.getSceneElements().find((e) => e.id === board?.id);
     if (!el) return;
-    const { w, h, data } = pixelInfo(el);
-    if (nw === w && nh === h) return;
-    const src = editingId === el.id && canvasRef.current ? canvasRef.current : await loadRaw(data, w, h);
-    flushCommit();
-    const raw = newCanvas(nw, nh);
-    raw.getContext("2d").drawImage(src, 0, 0);
-    commitBoard(api, el.id, raw);
+    const info = pixelInfo(el);
+    if (nw === info.w && nh === info.h) return;
+    const loaded = await loadLayers(info);
+    const resized = loaded.map((l) => {
+      const canvas = newCanvas(nw, nh);
+      canvas.getContext("2d").drawImage(l.canvas, 0, 0);
+      return { ...l, canvas };
+    });
+    const meta = resized.map((l) => ({
+      id: l.id,
+      name: l.name,
+      visible: l.visible,
+      data: l.canvas.toDataURL("image/png"),
+    }));
+    commitBoard(api, el.id, flatten(resized, nw, nh), meta);
   };
 
   // ---- 내보내기 ----
   const doExport = async () => {
+    flushAll();
     const el = api.getSceneElements().find((e) => e.id === board?.id);
     if (!el) return;
     const { w, h, data } = pixelInfo(el);
-    const raw =
-      editingId === el.id && canvasRef.current ? canvasRef.current : await loadRaw(data, w, h);
-    const dataURL = exportDataURL(raw, exportScale);
+    const dataURL = exportDataURL(await loadRaw(data, w, h), exportScale);
     const name = `pixel-${w}x${h}${exportScale > 1 ? `@${exportScale}x` : ""}.png`;
     if (chh?.saveImage) {
       const res = await chh.saveImage({ defaultName: name, dataURL });
@@ -603,8 +1005,10 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
     const cssW = board.width * z;
     const cssH = board.height * z;
     const cell = cssW / w;
+    const cellH = cssH / h;
     const tile = checkerTile(w, h) * cell;
     const [A, B] = CHECKER_COLORS;
+    const cursor = panReady ? "grab" : tool === "picker" ? "copy" : "crosshair";
     overlay = (
       <div
         className="px-overlay"
@@ -616,7 +1020,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
           height={h}
           className="px-canvas"
           style={{
-            cursor: tool === "picker" ? "copy" : "crosshair",
+            cursor,
             backgroundImage: `conic-gradient(${A} 25%, ${B} 0 50%, ${A} 0 75%, ${B} 0)`,
             backgroundSize: `${tile * 2}px ${tile * 2}px`,
           }}
@@ -626,8 +1030,15 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
           onPointerCancel={endStroke}
           onContextMenu={(e) => e.preventDefault()}
         />
+        <canvas ref={previewRef} width={w} height={h} className="px-preview" />
         {grid && cell >= 6 && (
-          <div className="px-grid" style={{ backgroundSize: `${cell}px ${cell}px` }} />
+          <div className="px-grid" style={{ backgroundSize: `${cell}px ${cellH}px` }} />
+        )}
+        {sel && (
+          <div
+            className="px-sel"
+            style={{ left: sel.x * cell, top: sel.y * cellH, width: sel.w * cell, height: sel.h * cellH }}
+          />
         )}
       </div>
     );
@@ -655,6 +1066,49 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
             </div>
           </div>
         )}
+        {layersOpen && editing && (
+          <div className="px-layers">
+            {layerInfo.list
+              .map((l, i) => ({ l, i }))
+              .reverse()
+              .map(({ l, i }) => (
+                <div
+                  key={l.id}
+                  className={`px-layer-row${i === layerInfo.active ? " on" : ""}`}
+                  onClick={() => selectLayer(i)}
+                >
+                  <button
+                    className={`px-layer-eye${l.visible ? "" : " off"}`}
+                    title={l.visible ? "레이어 숨기기" : "레이어 보이기"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleLayer(i);
+                    }}
+                  >
+                    ◉
+                  </button>
+                  <input
+                    className="px-layer-name"
+                    defaultValue={l.name}
+                    key={l.name}
+                    spellCheck={false}
+                    onBlur={(e) => renameLayer(i, e.target.value)}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                    }}
+                  />
+                </div>
+              ))}
+            <div className="px-layer-tools">
+              <button className="px-btn" onClick={addLayer} title="새 레이어">추가</button>
+              <button className="px-btn" onClick={removeLayer} disabled={layerInfo.list.length < 2} title="이 레이어 지우기">삭제</button>
+              <button className="px-btn" onClick={() => moveLayer(1)} disabled={layerInfo.active >= layerInfo.list.length - 1} title="위로">▲</button>
+              <button className="px-btn" onClick={() => moveLayer(-1)} disabled={layerInfo.active < 1} title="아래로">▼</button>
+              <button className="px-btn" onClick={mergeDown} disabled={layerInfo.active < 1} title="아래 레이어와 합치기">합치기</button>
+            </div>
+          </div>
+        )}
         <div className="px-bar">
           <span className="px-info">
             픽셀판
@@ -674,7 +1128,7 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
                   key={t.id}
                   className={`px-btn${tool === t.id ? " on" : ""}`}
                   onClick={() => setTool(t.id)}
-                  title={`${t.label} (${t.key.toUpperCase()})`}
+                  title={t.hint}
                 >
                   {t.label}
                 </button>
@@ -708,6 +1162,15 @@ export default function PixelLayer({ api, hidden, autoEdit, onAutoEditDone }) {
                 />
               ))}
               <span className="px-sep" />
+              <button className={`px-btn${mirrorX ? " on" : ""}`} onClick={() => setMirrorX((v) => !v)} title="좌우 대칭 (X)">
+                좌우
+              </button>
+              <button className={`px-btn${mirrorY ? " on" : ""}`} onClick={() => setMirrorY((v) => !v)} title="상하 대칭 (Y)">
+                상하
+              </button>
+              <button className={`px-btn${layersOpen ? " on" : ""}`} onClick={() => setLayersOpen((v) => !v)} title="레이어 패널">
+                레이어
+              </button>
               <button className={`px-btn${grid ? " on" : ""}`} onClick={() => setGrid((v) => !v)} title="격자 표시">
                 격자
               </button>
