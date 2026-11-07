@@ -331,12 +331,12 @@ async function main() {
   r = await launch({
     userData: dir,
     script: `
-      // 예전 형식(layers 없음) 픽셀판: 왼쪽 위 한 칸만 빨강인 4×4
+      // 픽셀판을 없애기 전에 저장된 보드: customData.chhPixel 이 붙은 이미지
       const raw = document.createElement("canvas");
       raw.width = raw.height = 4;
       const rc = raw.getContext("2d");
       rc.fillStyle = "#ff0000";
-      rc.fillRect(0, 0, 1, 1);
+      rc.fillRect(0, 0, 4, 4);
       const data = raw.toDataURL("image/png");
       api.addFiles([{ id: "oldpx", dataURL: data, mimeType: "image/png", created: 1 }]);
       const base = ${JSON.stringify({ ...rect("__p"), type: "image", fileId: "oldpx", status: "saved", scale: [1, 1], crop: null })};
@@ -345,57 +345,23 @@ async function main() {
         appState: { selectedElementIds: { pix: true } },
       });
       await wait(400);
-      const count = () => {
-        const c = document.querySelector(".px-canvas");
-        const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
-        let n = 0;
-        for (let i = 3; i < d.length; i += 4) if (d[i]) n++;
-        return n;
-      };
-      // 복사: 클립보드 이미지에 체크무늬 없이 투명이 남아야 한다
       hoverCanvas();
       await window.chh.testCopy();
       await wait(900);
       const clip = await window.chh.testClipboardImage();
-      const url = clip.dataURL;
       const keptText = clip.text.includes("excalidraw/clipboard");
       await wait(3000); // 이 사이에 바깥에서 Windows 클립보드를 조회한다
-      const img = new Image();
-      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
-      const cv = document.createElement("canvas");
-      cv.width = img.naturalWidth;
-      cv.height = img.naturalHeight;
-      const cx = cv.getContext("2d");
-      cx.drawImage(img, 0, 0);
-      const corner = [...cx.getImageData(0, 0, 1, 1).data];
-      const far = [...cx.getImageData(cv.width - 1, cv.height - 1, 1, 1).data];
-      // 그리기 시작: 예전 픽셀이 레이어 하나로 열린다
-      key("Enter");
-      await wait(600);
-      const opened = count();
-      // 그리는 중 Delete 와 도형 단축키는 보드로 가지 않는다
-      key("Delete");
-      key("a");
-      await wait(300);
-      const stillEditing = document.body.classList.contains("px-editing");
-      key("Escape");
-      await wait(600);
-      const el = api.getSceneElements().find((e) => e.id === "pix");
-      // 보드 안에 다시 붙여넣기: 비트맵이 아니라 요소 그대로 들어와야 한다
       hoverCanvas();
       await window.chh.testPaste(null);
       await wait(1000);
-      const boards = api.getSceneElements().filter((e) => e.customData?.chhPixel).length;
-      return { boards, keptText, size: [cv.width, cv.height], corner, far, opened, stillEditing, exists: !!el, active: api.getAppState().activeTool.type };`,
+      const els = api.getSceneElements();
+      return { keptText, n: els.length, kept: !!els.find((e) => e.id === "pix").customData?.chhPixel, editing: document.body.className };`,
   });
   clearTimeout(clipTimer);
   check("다른 프로그램에서 클립보드 이미지가 보인다", /^\d+x\d+$/.test(externalClip), externalClip);
   check("복사 후에도 보드 안 붙여넣기용 글자가 남는다", r.result?.keptText === true);
-  check("복사한 픽셀판을 보드에 붙여넣으면 픽셀판으로 들어온다", r.result?.boards === 2, String(r.result?.boards));
-  check("예전 형식 픽셀판이 그대로 열린다", r.result?.opened === 1, JSON.stringify(r.result));
-  check("그리는 중 Delete·A 키가 보드로 가지 않는다", r.result?.stillEditing && r.result?.exists && r.result?.active === "selection");
-  check("픽셀판 복사는 확대된 원본이다", r.result?.size?.[0] > 4 && r.result.corner[0] === 255 && r.result.corner[3] === 255);
-  check("픽셀판 복사에 체크무늬가 없다", r.result?.far?.[3] === 0, JSON.stringify(r.result?.far));
+  check("복사한 이미지를 보드에 붙여넣으면 요소 그대로 들어온다", r.result?.n === 2, String(r.result?.n));
+  check("예전 픽셀판은 일반 이미지로 남는다", r.result?.kept === true, JSON.stringify(r.result));
 
   // 9. 실제 큰 보드 (선택)
   const big = process.argv[2];

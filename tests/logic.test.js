@@ -5,55 +5,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { arrangeItems } from "../src/arrange.js";
 import { eventToAccelerator, formatAccelerator } from "../src/accelerator.js";
-import { bresenham, fillData, inRect, mirrorStamps, normalizeRect, rectFilled, rectOutline } from "../src/pixel/tools.js";
 
 const require = createRequire(import.meta.url);
 const { atomicWrite, archiveFile } = require("../electron/fsutil.cjs");
 const { fitBounds } = require("../electron/windowBounds.cjs");
-
-describe("픽셀 도구", () => {
-  it("bresenham 은 양 끝을 포함해 빈틈없이 잇는다", () => {
-    const pts = [];
-    bresenham(0, 0, 3, 1, (x, y) => pts.push([x, y]));
-    expect(pts[0]).toEqual([0, 0]);
-    expect(pts.at(-1)).toEqual([3, 1]);
-    expect(pts).toHaveLength(4);
-  });
-
-  it("채우기는 경계 안쪽만 칠하고 바뀐 수를 돌려준다", () => {
-    // 3×1: 투명, 빨강, 투명 → 왼쪽 칸만 칠해져야 한다
-    const d = new Uint8ClampedArray([0, 0, 0, 0, 255, 0, 0, 255, 0, 0, 0, 0]);
-    expect(fillData(d, 3, 1, 0, 0, [0, 255, 0])).toBe(1);
-    expect([...d.slice(0, 4)]).toEqual([0, 255, 0, 255]);
-    expect(d[11]).toBe(0);
-    expect(fillData(d, 3, 1, 0, 0, [0, 255, 0])).toBe(0); // 이미 같은 색
-    expect(fillData(d, 3, 1, 9, 0, [0, 255, 0])).toBe(0); // 판 밖
-  });
-
-  it("대칭은 브러시 크기를 고려해 마주 보는 자리에 찍는다", () => {
-    expect(mirrorStamps(0, 0, 2, 8, 8, true, false)).toEqual([[0, 0], [6, 0]]);
-    expect(mirrorStamps(1, 1, 1, 4, 4, true, true)).toHaveLength(4);
-    expect(mirrorStamps(1, 0, 2, 4, 4, true, false)).toEqual([[1, 0]]); // 가운데는 한 번만
-  });
-
-  it("선택 영역은 판 안으로 잘린다", () => {
-    expect(normalizeRect({ x: 5, y: 5 }, { x: -3, y: 2 }, 4, 4)).toEqual({ x: 0, y: 2, w: 4, h: 2 });
-    expect(normalizeRect({ x: 9, y: 9 }, { x: 12, y: 12 }, 4, 4)).toBeNull();
-    expect(inRect({ x: 1, y: 1, w: 2, h: 2 }, { x: 2, y: 2 })).toBe(true);
-    expect(inRect({ x: 1, y: 1, w: 2, h: 2 }, { x: 3, y: 1 })).toBe(false);
-    expect(inRect(null, { x: 0, y: 0 })).toBe(false);
-  });
-
-  it("사각형 도구: 테두리는 속이 비고 채움은 전부 칠한다", () => {
-    const outline = new Set();
-    rectOutline({ x: 0, y: 0 }, { x: 2, y: 2 }, (x, y) => outline.add(`${x},${y}`));
-    expect(outline.size).toBe(8);
-    expect(outline.has("1,1")).toBe(false);
-    let filled = 0;
-    rectFilled({ x: 2, y: 2 }, { x: 0, y: 0 }, () => filled++);
-    expect(filled).toBe(9);
-  });
-});
 
 describe("이미지 자동 정렬", () => {
   const items = [

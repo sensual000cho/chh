@@ -35,7 +35,6 @@ contextBridge.exposeInMainWorld("chh", {
   autosaveClear: () => ipcRenderer.invoke("file:autosave-clear"),
   openBackups: () => ipcRenderer.send("file:open-backups"),
   exportImages: (images) => ipcRenderer.invoke("file:export-images", images),
-  saveImage: (args) => ipcRenderer.invoke("file:save-image", args),
   pendingOpen: () => ipcRenderer.invoke("app:pending-open"),
   pathForFile: (file) => webUtils.getPathForFile(file),
   onOpenPath: (cb) => on("open-path", cb),

@@ -24,17 +24,17 @@ export default function ShortcutDialog({ current, onChanged, onClose }) {
   }, [onChanged, onClose]);
 
   return (
-    <div className="pxdlg-back" onPointerDown={onClose}>
-      <div className="pxdlg" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="dlg-back" onPointerDown={onClose}>
+      <div className="dlg" onPointerDown={(e) => e.stopPropagation()}>
         <h3>캡처 단축키 바꾸기</h3>
-        <p className="pxdlg-hint">
+        <p className="dlg-hint">
           새 키 조합을 누르세요. Ctrl이나 Alt를 함께 눌러야 합니다 (F 키는 단독 가능). 다른 프로그램을 쓰는 중에도
           동작하는 단축키입니다.
         </p>
         <div className="shortcut-now">{formatAccelerator(current)}</div>
         {error && <p className="shortcut-error">{error}</p>}
-        <div className="pxdlg-actions">
-          <button className="px-btn" onClick={onClose}>
+        <div className="dlg-actions">
+          <button className="dlg-btn" onClick={onClose}>
             취소 (Esc)
           </button>
         </div>

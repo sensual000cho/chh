@@ -14,10 +14,7 @@ import "./excalidraw-dark.css"; // 라이트 테마(필터 없음) 위에 다크
 import TitleBar from "./TitleBar.jsx";
 import ColorPicker from "./ColorPicker.jsx";
 import ElementColorPicker from "./ElementColorPicker.jsx";
-import PixelLayer from "./pixel/PixelLayer.jsx";
-import PixelDialog from "./pixel/PixelDialog.jsx";
 import ShortcutDialog from "./ShortcutDialog.jsx";
-import { createBoard, exportDataURL, fitExportScale, isPixelBoard, loadRaw, pixelInfo } from "./pixel/board.js";
 import { arrangeItems } from "./arrange.js";
 import { autosaveDelay, sceneSignature, store } from "./boardStore.js";
 import { formatAccelerator } from "./accelerator.js";
@@ -59,8 +56,6 @@ export default function App() {
   const [pickerPos, setPickerPos] = useState(null);
   const [elPicker, setElPicker] = useState(null); // 요소 선/배경 색 선택기 { type, left, top }
   const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
-  const [pixelDialog, setPixelDialog] = useState(false);
-  const [autoEdit, setAutoEdit] = useState(null);
   const [dirty, setDirty] = useState(false); // 파일에 저장되지 않은 변경이 있는가
   const [clickThrough, setClickThrough] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
@@ -68,8 +63,7 @@ export default function App() {
   const uiHiddenRef = useRef(false);
   uiHiddenRef.current = uiHidden;
   const modalRef = useRef(false); // 우리 대화상자가 떠 있는 동안 전역 단축키를 쉬게 한다
-  modalRef.current = pixelDialog || shortcutOpen;
-  const pixelFlushRef = useRef(null); // 픽셀판에 아직 반영하지 않은 획을 바로 반영한다
+  modalRef.current = shortcutOpen;
   const bodyRef = useRef(null);
   const fileInputRef = useRef(null);
   const apiRef = useRef(null);
@@ -256,7 +250,6 @@ export default function App() {
     async (saveAs = false) => {
       const api = apiRef.current;
       if (!api || !chh) return false;
-      pixelFlushRef.current?.();
       const sig = sceneSignature(api.getSceneElementsIncludingDeleted(), api.getAppState().viewBackgroundColor);
       const content = serialize(api);
       const res = await chh.save({ filePath: filePathRef.current, content, saveAs });
@@ -281,7 +274,6 @@ export default function App() {
 
   // 지금 보드를 떠나도 되는지 확인한다: "clean" | "saved" | "discarded" | null(취소)
   const confirmLeave = useCallback(async () => {
-    pixelFlushRef.current?.();
     if (!dirtyRef.current) return "clean";
     const name = filePathRef.current ? filePathRef.current.split(/[\\/]/).pop() : "새 보드";
     const answer = chh
@@ -423,14 +415,6 @@ export default function App() {
     api.setToast({ message: `이미지 ${targets.length}장을 정렬했습니다. (Ctrl+Z로 되돌리기)`, duration: 2500 });
   }, []);
 
-  const createPixel = useCallback((w, h) => {
-    const api = apiRef.current;
-    if (!api) return;
-    const el = createBoard(api, w, h);
-    setPixelDialog(false);
-    setAutoEdit({ id: el.id });
-  }, []);
-
   // 파일/웹 이미지 끌어다 놓기 (.chh 파일은 보드로 열기)
   useEffect(() => {
     const el = bodyRef.current;
@@ -487,19 +471,12 @@ export default function App() {
       const s = api.getAppState();
       const sel = api.getSceneElements().filter((el) => s.selectedElementIds[el.id]);
       if (sel.length !== 1 || sel[0].type !== "image") return;
-      const el = sel[0];
-      const file = api.getFiles()[el.fileId];
+      const file = api.getFiles()[sel[0].fileId];
       if (!file?.dataURL) return;
       // Excalidraw 의 텍스트 복사(비동기)가 끝난 뒤 이미지를 덧붙인다.
       setTimeout(async () => {
         try {
-          // 픽셀판의 표시용 이미지에는 체크무늬가 깔려 있으므로 원본 픽셀을 투명 배경 그대로 보낸다
-          if (isPixelBoard(el)) {
-            const { w, h, data } = pixelInfo(el);
-            await chh.addImageToClipboard(exportDataURL(await loadRaw(data, w, h), fitExportScale(w, h)));
-          } else {
-            await chh.addImageToClipboard(await toPngDataURL(file.dataURL));
-          }
+          await chh.addImageToClipboard(await toPngDataURL(file.dataURL));
         } catch {}
       }, 150);
     };
@@ -507,7 +484,6 @@ export default function App() {
     // 우리 요소 JSON 이 있으면 이미지를 뺀 붙여넣기 이벤트로 바꿔 크기·위치를 그대로 살린다.
     // 외부 이미지는 insertImages 로 넣어 파일 선택/드롭과 같은 크기 규칙을 따르게 한다.
     const onPaste = async (e) => {
-      if (document.body.classList.contains("px-editing")) return; // 그리는 중에는 PixelLayer 가 막는다
       const dt = e.clipboardData;
       if (!e.isTrusted || !dt) return;
       const text = dt.getData("text/plain");
@@ -675,9 +651,6 @@ export default function App() {
         return;
       }
 
-      // 픽셀 그리기 중의 Esc 는 PixelLayer 가 처리한다
-      if (e.key === "Escape" && document.body.classList.contains("px-editing")) return;
-
       if (e.key === "Escape") {
         if (uiHiddenRef.current) {
           e.preventDefault();
@@ -808,7 +781,6 @@ export default function App() {
         onSave={() => save(false)}
         onCapture={() => chh.startCapture()}
         onImport={() => fileInputRef.current?.click()}
-        onNewPixel={() => setPixelDialog(true)}
       />
       <div className="app-body" ref={bodyRef}>
       <Excalidraw
@@ -841,7 +813,6 @@ export default function App() {
             </>
           )}
           <MainMenu.Item onSelect={() => fileInputRef.current?.click()}>이미지 가져오기</MainMenu.Item>
-          <MainMenu.Item onSelect={() => setPixelDialog(true)}>새 픽셀판</MainMenu.Item>
           <MainMenu.Item onSelect={arrangeImages}>이미지 자동 정렬</MainMenu.Item>
           {chh && (
             <>
@@ -919,14 +890,6 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
-      <PixelLayer
-        api={api}
-        hidden={uiHidden}
-        autoEdit={autoEdit}
-        onAutoEditDone={() => setAutoEdit(null)}
-        flushRef={pixelFlushRef}
-      />
-      {pixelDialog && <PixelDialog onCreate={createPixel} onClose={() => setPixelDialog(false)} />}
       {shortcutOpen && (
         <ShortcutDialog
           current={captureKey}

@@ -151,9 +151,8 @@ body,
   background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
 }
 
-/* ---- 색상 선택 패널 (캔버스 배경 · 도형 색 · 픽셀판) ---- */
-.bgpanel,
-.px-colorpop {
+/* ---- 색상 선택 패널 (캔버스 배경 · 도형 색) ---- */
+.bgpanel {
   padding: 8px;
   background: #232329;
   border: 1px solid #3a3a42;
@@ -196,201 +195,11 @@ body,
 .ui-hidden .App-top-bar,
 .ui-hidden .App-bottom-bar,
 .ui-hidden .mobile-misc-tools-container,
-.ui-hidden .bgpanel,
-.ui-hidden .pxpanel {
+.ui-hidden .bgpanel {
   display: none !important;
 }
 
-/* ---- 픽셀판 ---- */
-.px-overlay {
-  position: fixed;
-  z-index: 3; /* Excalidraw 캔버스(2) 위, Excalidraw UI(4) 아래 */
-  transform-origin: center;
-}
-.px-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  touch-action: none;
-  outline: 1px solid rgba(0, 0, 0, 0.5);
-}
-.px-grid {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.28) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.28) 1px, transparent 1px);
-}
-.px-hover {
-  position: fixed;
-  z-index: 60;
-  padding: 3px 8px;
-  border-radius: 5px;
-  background: rgba(20, 20, 24, 0.92);
-  border: 1px solid #44444c;
-  color: #e6e6ea;
-  font: 12px "Segoe UI", "Malgun Gothic", sans-serif;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.pxpanel {
-  position: fixed;
-  left: 0;
-  right: 0;
-  width: fit-content; /* transform 없이 가운데 정렬 (자식의 fixed 가 화면 기준이 되도록) */
-  margin: 0 auto;
-  bottom: 72px;
-  z-index: 20;
-  max-width: calc(100vw - 24px);
-  user-select: none;
-}
-.px-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 10px;
-  background: #232329;
-  border: 1px solid #3a3a42;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  color: #d4d4d8;
-  font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
-}
-.px-info { display: flex; align-items: center; gap: 4px; font-weight: 600; margin-right: 4px; white-space: nowrap; }
-.px-size {
-  width: 46px; height: 26px; padding: 0 4px; text-align: center;
-  background: #1b1b20; color: inherit; font: inherit; border: 1px solid #44444c; border-radius: 5px;
-  -moz-appearance: textfield;
-}
-.px-size::-webkit-inner-spin-button, .px-size::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-.px-size:focus { outline: none; border-color: #a8a5ff; }
-.px-sep { width: 1px; height: 18px; margin: 0 4px; background: #3e3e46; }
-.px-btn {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: #2f2f37;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.px-btn:hover:not(:disabled) { background: #3b3b45; }
-.px-btn.on { background: #403e6a; border-color: #a8a5ff; color: #fff; }
-.px-btn.primary { background: #4a47a3; color: #fff; }
-.px-btn.primary:hover { background: #5855bd; }
-.px-btn:disabled { opacity: 0.4; cursor: default; }
-.px-field { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.px-field input[type="range"] { width: 90px; }
-.px-field select {
-  height: 26px;
-  background: #2f2f37;
-  color: inherit;
-  border: 1px solid #44444c;
-  border-radius: 5px;
-}
-.px-field b { width: 18px; text-align: right; font-weight: 600; }
-.px-dim { opacity: 0.6; font-size: 12px; }
-.px-color,
-.px-chip {
-  flex: none;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border-radius: 5px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  cursor: pointer;
-}
-.px-color { width: 30px; height: 28px; border-radius: 6px; }
-.px-color.on, .px-chip.on { outline: 2px solid #a8a5ff; outline-offset: 1px; }
-.px-chip:hover { transform: scale(1.12); }
-.px-colorpop {
-  position: fixed; /* 가운데의 판을 가리지 않도록 화면 오른쪽에 둔다 */
-  right: 24px;
-  bottom: 150px;
-}
-.px-palette {
-  display: grid; grid-template-columns: repeat(8, 1fr); margin-top: 6px;
-  border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden;
-}
-.px-palette .px-chip { width: 100%; height: 22px; border: 0; border-radius: 0; }
-.px-palette .px-chip.on { outline: 0; box-shadow: inset 0 0 0 2px #fff, inset 0 0 0 3px rgba(0,0,0,.4); }
-.px-palette .px-chip:hover { transform: none; filter: brightness(1.15); }
-
-.px-preview {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  pointer-events: none;
-}
-.px-sel {
-  position: absolute;
-  pointer-events: none;
-  outline: 1px dashed #fff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75);
-}
-.px-layers {
-  position: fixed;
-  right: 24px;
-  top: 64px;
-  z-index: 20;
-  width: 220px;
-  max-height: calc(100vh - 260px);
-  overflow-y: auto;
-  padding: 8px;
-  background: #232329;
-  border: 1px solid #3a3a42;
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
-  color: #d4d4d8;
-  font: 13px "Segoe UI", "Malgun Gothic", sans-serif;
-}
-.px-layer-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 4px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-}
-.px-layer-row:hover { background: #2f2f37; }
-.px-layer-row.on { background: #403e6a; border-color: #a8a5ff; }
-.px-layer-eye {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  background: none;
-  border: 0;
-  color: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.px-layer-eye.off { opacity: 0.35; }
-.px-layer-name {
-  flex: 1;
-  min-width: 0;
-  height: 22px;
-  padding: 0 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  border: 1px solid transparent;
-  border-radius: 4px;
-}
-.px-layer-name:focus { outline: none; border-color: #a8a5ff; background: #1b1b20; }
-.px-layer-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.px-layer-tools .px-btn { height: 26px; padding: 0 8px; font-size: 12px; }
+/* ---- 작은 대화상자 ---- */
 .shortcut-now {
   margin-bottom: 12px;
   padding: 10px;
@@ -413,8 +222,7 @@ body,
   border: 2px dashed #a8a5ff;
 }
 
-/* 새 픽셀판 창 */
-.pxdlg-back {
+.dlg-back {
   position: fixed;
   inset: 0;
   z-index: 200;
@@ -423,7 +231,7 @@ body,
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
 }
-.pxdlg {
+.dlg {
   width: 380px;
   padding: 18px 20px;
   background: #232329;
@@ -433,28 +241,21 @@ body,
   color: #e0e0e4;
   font: 14px "Segoe UI", "Malgun Gothic", sans-serif;
 }
-.pxdlg h3 { margin: 0 0 4px; font-size: 16px; }
-.pxdlg-hint { margin: 0 0 14px; font-size: 12px; opacity: 0.6; }
-.pxdlg-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.pxdlg-size { display: flex; align-items: flex-end; gap: 10px; margin-bottom: 18px; }
-.pxdlg-size label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; opacity: 0.85; }
-.pxdlg-size input {
-  width: 90px;
-  height: 32px;
-  padding: 0 8px;
-  background: #121212;
-  color: #fff;
-  border: 1px solid #44444c;
+.dlg h3 { margin: 0 0 4px; font-size: 16px; }
+.dlg-hint { margin: 0 0 14px; font-size: 12px; opacity: 0.6; }
+.dlg-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
   border-radius: 6px;
-  font: 15px "Segoe UI", sans-serif;
+  background: #2f2f37;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
 }
-.pxdlg-size > span { padding-bottom: 7px; }
-.pxdlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
-/* 픽셀판 선택 중에는 이미지 자르기 안내를 숨긴다 */
-body.px-board-selected .HintViewer {
-  display: none;
-}
+.dlg-btn:hover { background: #3b3b45; }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* 창이 좁아지면 글자부터 줄인다 (세로로 깨지지 않게) */
 @media (max-width: 720px) {
@@ -473,7 +274,7 @@ body.px-board-selected .HintViewer {
 }
 
 /* ---- 색상 선택기 (스펙트럼 · 색조 · hex · 저장한 색) ---- */
-/* 메뉴·픽셀판 바와 같은 톤(#232329 / #3a3a42)을 쓰고, 칸끼리는 틈 없이 붙인다 */
+/* 메뉴와 같은 톤(#232329 / #3a3a42)을 쓰고, 칸끼리는 틈 없이 붙인다 */
 .cp { width: 232px; user-select: none; color: #d6d6de; font: 12px "Segoe UI", "Malgun Gothic", sans-serif; }
 .cp-spectrum { border: 1px solid #3a3a42; border-radius: 8px; overflow: hidden; }
 .cp-sv {

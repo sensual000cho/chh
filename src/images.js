@@ -163,13 +163,13 @@ export function pickDropped(dt) {
   return { files, urls: [...new Set(urls)] };
 }
 
-// 레퍼런스 이미지 폴더 저장용 목록 (픽셀판은 제외하고 원본 그대로)
+// 레퍼런스 이미지 폴더 저장용 목록 (원본 그대로)
 export function collectImages(api) {
   const files = api.getFiles();
   const seen = new Set();
   const out = [];
   for (const el of api.getSceneElements()) {
-    if (el.type !== "image" || el.customData?.chhPixel || !el.fileId || seen.has(el.fileId)) continue;
+    if (el.type !== "image" || !el.fileId || seen.has(el.fileId)) continue;
     const f = files[el.fileId];
     if (!f) continue;
     seen.add(el.fileId);
