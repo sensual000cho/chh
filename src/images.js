@@ -1,5 +1,6 @@
 // 이미지 가져오기: 파일 선택 / 드래그&드롭 / 웹 이미지 URL 을 보드에 이미지 요소로 넣는다.
 import { convertToExcalidrawElements, viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
+import { parseDroppedLinks } from "./links.js";
 
 // Excalidraw 가 그대로 쓸 수 있는 형식. 그 외(avif 등)는 PNG 로 변환해서 넣는다.
 const NATIVE = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml", "image/bmp"];
@@ -40,9 +41,6 @@ export function loadImage(src) {
   });
 }
 
-// 붙여넣은 글자가 http(s) 주소 하나뿐인가
-export const isHttpUrl = (text) => /^https?:\/\/\S+$/i.test((text || "").trim());
-
 const mimeOfDataURL = (url) => /^data:([^;,]+)/.exec(url)?.[1] || "";
 
 // dataURL 을 Excalidraw 가 지원하는 형식으로 맞추고 크기를 알아낸다.
@@ -72,13 +70,13 @@ export async function toPngDataURL(dataURL) {
   return c.toDataURL("image/png");
 }
 
-// sources: [{ dataURL, mime? }]  /  anchor: { x, y } 장면 좌표
+// sources: [{ dataURL, mime?, link? }] (link: 출처 주소)  /  anchor: { x, y } 장면 좌표
 // mode "center": 묶음의 중앙이 anchor, "corner": 묶음의 왼쪽 위가 anchor
 export async function insertImages(api, sources, anchor, mode = "center") {
   const prepared = [];
   for (const s of sources) {
     try {
-      prepared.push(await prepare(s.dataURL, s.mime));
+      prepared.push({ ...(await prepare(s.dataURL, s.mime)), link: s.link || null });
     } catch {
       /* 읽을 수 없는 파일은 건너뛴다 */
     }
@@ -123,7 +121,7 @@ export async function insertImages(api, sources, anchor, mode = "center") {
   }));
   api.addFiles(files);
   const elements = convertToExcalidrawElements(
-    placed.map(({ x, y, w, h }, i) => ({
+    placed.map(({ p, x, y, w, h }, i) => ({
       type: "image",
       fileId: files[i].id,
       status: "saved",
@@ -131,6 +129,7 @@ export async function insertImages(api, sources, anchor, mode = "center") {
       y: oy + y,
       width: w,
       height: h,
+      link: p.link,
     })),
   );
   api.updateScene({
@@ -149,18 +148,12 @@ export function viewCenter(api) {
   );
 }
 
-// 드롭된 DataTransfer 에서 가져올 것을 뽑는다: { files: File[], urls: string[] }
+// 드롭된 DataTransfer 에서 가져올 것을 뽑는다: { files: File[], web: { image, link } | null }
+// 브라우저가 이미지를 파일로 넘겨줘도 출처 주소를 함께 읽는다.
 export function pickDropped(dt) {
   const files = [...(dt?.files || [])].filter(isImageFile);
-  const urls = [];
-  if (!files.length) {
-    const html = dt?.getData("text/html") || "";
-    const m = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
-    if (m) urls.push(m[1]);
-    const uri = (dt?.getData("text/uri-list") || "").split(/\r?\n/).find((l) => l && !l.startsWith("#"));
-    if (uri && /^(https?:|data:image\/)/i.test(uri)) urls.push(uri);
-  }
-  return { files, urls: [...new Set(urls)] };
+  const web = parseDroppedLinks(dt?.getData("text/html"), dt?.getData("text/uri-list"));
+  return { files, web };
 }
 
 // 레퍼런스 이미지 폴더 저장용 목록 (원본 그대로)

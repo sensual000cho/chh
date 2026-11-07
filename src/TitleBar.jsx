@@ -13,6 +13,9 @@ const icons = {
   image: svg(<><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M21 16l-5-5-8 9" /></>),
   pin: svg(<><path d="M9 4h6l-1 6 3 3H7l3-3z" /><path d="M12 13v8" /></>),
   arrange: svg(<><rect x="3" y="3" width="8" height="11" rx="1" /><rect x="13" y="3" width="8" height="6" rx="1" /><rect x="13" y="11" width="8" height="10" rx="1" /><rect x="3" y="16" width="8" height="5" rx="1" /></>),
+  note: svg(<><path d="M5 4h14a1 1 0 0 1 1 1v10l-5 5H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" /><path d="M20 15h-5v5" /></>),
+  group: svg(<><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3" /><rect x="8" y="8" width="8" height="8" rx="1" /></>),
+  search: svg(<><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.5-4.5" /></>),
   through: svg(<><path d="M5 3l6 16 2.5-6.5L20 10z" /><path d="M16 16l4 4" /></>),
   opacity: svg(<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z" />),
   min: svg(<path d="M5 12h14" />),
@@ -41,6 +44,9 @@ export default function TitleBar({
   clickThrough,
   onToggleClickThrough,
   onArrange,
+  onNote,
+  onGroup,
+  onSearch,
   onOpen,
   onSave,
   onCapture,
@@ -98,7 +104,12 @@ export default function TitleBar({
         <span className="tb-sep" />
         <Btn title={`화면 캡처 (${captureKey || "Ctrl+Shift+X"})`} onClick={onCapture} label="캡처">{icons.capture}</Btn>
         <Btn title="이미지 가져오기 (파일 선택 · 끌어다 놓기 · 붙여넣기)" onClick={onImport} label="이미지">{icons.image}</Btn>
-        <Btn title="이미지 자동 정렬 (선택한 이미지, 없으면 전체)" onClick={onArrange}>{icons.arrange}</Btn>
+        <Btn title="새 메모 (N)" onClick={onNote} label="메모">{icons.note}</Btn>
+        <span className="tb-extra">
+          <Btn title="선택 항목 묶기 (Alt+G)" onClick={onGroup}>{icons.group}</Btn>
+          <Btn title="이미지 자동 정렬 (선택한 이미지나 묶음, 없으면 묶음 밖 전체)" onClick={onArrange}>{icons.arrange}</Btn>
+          <Btn title="보드에서 찾기 (Ctrl+F)" onClick={onSearch}>{icons.search}</Btn>
+        </span>
         <span className="tb-sep" />
         <Btn title={onTop ? "항상 위 끄기" : "항상 위"} active={onTop} onClick={() => setOnTop((v) => !v)}>
           {icons.pin}

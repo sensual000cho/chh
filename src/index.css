@@ -257,6 +257,12 @@ body,
 .dlg-btn:hover { background: #3b3b45; }
 .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+.tb-extra { display: contents; }
+/* 창이 많이 좁으면 메뉴에도 있는 버튼부터 숨긴다 */
+@media (max-width: 620px) {
+  .tb-extra { display: none; }
+}
+
 /* 창이 좁아지면 글자부터 줄인다 (세로로 깨지지 않게) */
 @media (max-width: 720px) {
   .tb-label { display: none; }

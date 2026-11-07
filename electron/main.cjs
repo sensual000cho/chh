@@ -22,6 +22,9 @@ const { fitBounds } = require("./windowBounds.cjs");
 // 개발·테스트용 환경 변수는 패키징되지 않은 실행에서만 듣는다 (배포판에서 임의 코드가 실행되지 않도록)
 const devEnv = app.isPackaged ? {} : process.env;
 const isDev = devEnv.CHH_DEV === "1";
+// 조용한 자동 점검: 화면 밖에서 포커스 없이 실행하고 전역 단축키도 잡지 않는다
+const quiet = !!devEnv.CHH_QUIET;
+const registerShortcut = (accel, fn) => (quiet ? true : globalShortcut.register(accel, fn));
 if (devEnv.CHH_USERDATA) app.setPath("userData", devEnv.CHH_USERDATA);
 const userDir = app.getPath("userData");
 const AUTOSAVE_PATH = path.join(userDir, "autosave.chh");
@@ -128,9 +131,12 @@ function closeSplash() {
 
 function createMainWindow() {
   const state = loadWindowState();
-  const bounds = fitBounds(state, screen.getAllDisplays().map((d) => d.workArea));
+  const bounds = quiet
+    ? { x: -6000, y: -6000, width: 1200, height: 760 }
+    : fitBounds(state, screen.getAllDisplays().map((d) => d.workArea));
   mainWindow = new BrowserWindow({
     ...bounds,
+    skipTaskbar: quiet,
     minWidth: 340,
     minHeight: 240,
     frame: false,
@@ -143,6 +149,7 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: !quiet,
       spellcheck: false,
       additionalArguments: devEnv.CHH_TEST ? ["--chh-test"] : [],
     },
@@ -162,6 +169,10 @@ function createMainWindow() {
     const wait = splash ? Math.max(300, 1200 - (Date.now() - splashShownAt)) : 0;
     setTimeout(() => {
       // maximize() 는 창을 곧바로 보이게 하므로 로딩이 끝난 지금 호출한다
+      if (quiet) {
+        mainWindow.showInactive();
+        return;
+      }
       if (state.maximized) mainWindow.maximize();
       mainWindow.show();
       closeSplash();
@@ -256,7 +267,7 @@ function setClickThrough(on) {
   if (on) {
     let ok = false;
     try {
-      ok = globalShortcut.register(CLICK_THROUGH_SHORTCUT, () => setClickThrough(false));
+      ok = registerShortcut(CLICK_THROUGH_SHORTCUT, () => setClickThrough(false));
     } catch {}
     if (!ok) return false;
     mainWindow.setAlwaysOnTop(true, "floating");
@@ -307,6 +318,11 @@ if (devEnv.CHH_TEST) {
     // Excalidraw 는 커서가 캔버스 위에 있을 때만 붙여넣기를 처리한다
     mainWindow.webContents.sendInputEvent({ type: "mouseMove", x: 300, y: 300 });
     mainWindow.webContents.paste();
+  });
+  ipcMain.handle("test:cdp", async (_e, method, params) => {
+    const dbg = mainWindow.webContents.debugger;
+    if (!dbg.isAttached()) dbg.attach("1.3");
+    return dbg.sendCommand(method, params);
   });
   ipcMain.handle("test:copy", () => mainWindow.webContents.copy());
   ipcMain.handle("test:clipboard-image", async () => {
@@ -473,26 +489,100 @@ ipcMain.handle("clipboard:add-image", async (_e, pngDataURL) => {
 
 // 웹에서 끌어온 이미지 URL을 받아오기 (렌더러에서는 CORS로 막힐 수 있음)
 const MAX_IMAGE_BYTES = 100 * 1024 * 1024;
-ipcMain.handle("net:fetch-image", async (_e, url) => {
+// 일부 사이트(네이버 블로그 등)는 다른 곳에서 온 요청의 이미지를 막으므로 브라우저처럼 요청한다.
+const BROWSER_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
+function originOf(url) {
+  try {
+    return new URL(url).origin + "/";
+  } catch {
+    return null;
+  }
+}
+// 한 번 요청한다. net.fetch 는 Referer 를 표준대로 막으므로 net.request 를 쓴다.
+// 돌려주는 값: { status, mime, buf, tooLarge }. 웹 페이지이거나 너무 크면 본문을 받다가 끊는다.
+function requestOnce(url, referer) {
+  return new Promise((resolve, reject) => {
+    // 다른 사이트 주소를 Referer 로 보내려면 정책을 지정해야 한다 (기본 정책에서는 요청이 막힌다)
+    const req = net.request({ url, redirect: "follow", referrerPolicy: "unsafe-url" });
+    req.setHeader("User-Agent", BROWSER_UA);
+    req.setHeader("Accept", "image/*,*/*;q=0.8");
+    if (referer) req.setHeader("Referer", referer);
+    const timer = setTimeout(() => {
+      req.abort();
+      reject(new Error("시간 초과"));
+    }, 30000);
+    const finish = (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    };
+    req.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    req.on("response", (res) => {
+      const header = (name) => [].concat(res.headers[name] || "")[0];
+      const mime = String(header("content-type")).split(";")[0].trim().toLowerCase();
+      const status = res.statusCode;
+      if (status < 200 || status >= 300 || mime.startsWith("text/")) {
+        req.abort();
+        finish({ status, mime, buf: null });
+        return;
+      }
+      if (Number(header("content-length")) > MAX_IMAGE_BYTES) {
+        req.abort();
+        finish({ status, mime, buf: null, tooLarge: true });
+        return;
+      }
+      const chunks = [];
+      let size = 0;
+      res.on("data", (chunk) => {
+        size += chunk.length;
+        if (size > MAX_IMAGE_BYTES) {
+          req.abort();
+          finish({ status, mime, buf: null, tooLarge: true });
+          return;
+        }
+        chunks.push(chunk);
+      });
+      res.on("end", () => finish({ status, mime, buf: Buffer.concat(chunks) }));
+      res.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+    req.end();
+  });
+}
+
+// 원래 페이지 → 이미지 사이트 → 없음 순으로 Referer 를 바꿔 가며, 거절당했을 때만 다시 시도한다
+async function fetchWithReferers(url, pageUrl) {
+  const referers = [...new Set([/^https?:/i.test(pageUrl || "") ? pageUrl : originOf(url), originOf(url), null])];
+  let res = null;
+  let lastError = null;
+  for (const referer of referers) {
+    try {
+      res = await requestOnce(url, referer);
+      lastError = null;
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    if (res.status !== 401 && res.status !== 403) break;
+  }
+  if (lastError && !res) throw lastError;
+  return res;
+}
+
+ipcMain.handle("net:fetch-image", async (_e, url, pageUrl) => {
   try {
     if (!/^https?:\/\//i.test(url || "")) return { error: "http(s) 주소만 가져올 수 있습니다" };
-    const res = await net.fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 CHH" },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return { error: `HTTP ${res.status}` };
-    let mime = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    // 웹 페이지 주소를 붙여넣은 경우: 본문을 받기 전에 끝낸다
-    if (mime.startsWith("text/")) {
-      res.body?.cancel().catch(() => {});
-      return { error: "이미지가 아닙니다" };
-    }
-    if (Number(res.headers.get("content-length")) > MAX_IMAGE_BYTES) {
-      res.body?.cancel().catch(() => {});
-      return { error: "이미지가 너무 큽니다 (100MB 초과)" };
-    }
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > MAX_IMAGE_BYTES) return { error: "이미지가 너무 큽니다 (100MB 초과)" };
+    const res = await fetchWithReferers(url, pageUrl || null);
+    if (res.status === 401 || res.status === 403) return { error: `사이트가 이미지 가져오기를 막았습니다 (HTTP ${res.status})` };
+    if (res.status < 200 || res.status >= 300) return { error: `HTTP ${res.status}` };
+    if (res.tooLarge) return { error: "이미지가 너무 큽니다 (100MB 초과)" };
+    if (!res.buf) return { error: "이미지가 아닙니다" }; // 웹 페이지 주소를 붙여넣은 경우
+    const buf = res.buf;
+    let mime = res.mime;
     if (!mime.startsWith("image/")) mime = sniffMime(buf);
     if (!mime) return { error: "이미지가 아닙니다" };
     // webp/avif 등은 PNG로 통일해 Excalidraw 호환성 확보
@@ -523,13 +613,13 @@ function registerCaptureShortcut(accel) {
   if (previous) globalShortcut.unregister(previous);
   let ok;
   try {
-    ok = globalShortcut.register(accel, startCapture);
+    ok = registerShortcut(accel, startCapture);
   } catch {
     ok = false;
   }
   if (ok) captureShortcut = accel;
   // 등록에 실패하면 쓰던 단축키를 되살린다
-  else if (previous) globalShortcut.register(previous, startCapture);
+  else if (previous) registerShortcut(previous, startCapture);
   return ok;
 }
 

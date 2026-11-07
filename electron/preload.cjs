@@ -40,7 +40,7 @@ contextBridge.exposeInMainWorld("chh", {
   onOpenPath: (cb) => on("open-path", cb),
 
   // 웹 이미지
-  fetchImage: (url) => ipcRenderer.invoke("net:fetch-image", url),
+  fetchImage: (url, pageUrl) => ipcRenderer.invoke("net:fetch-image", url, pageUrl),
 
   // 클립보드
   addImageToClipboard: (pngDataURL) => ipcRenderer.invoke("clipboard:add-image", pngDataURL),
@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld("chh", {
   // 자동 점검용 (패키징되지 않은 실행에서 CHH_TEST 를 줬을 때만 true)
   testMode: process.argv.includes("--chh-test"),
   testPaste: (text) => ipcRenderer.invoke("test:paste", text),
+  testCdp: (method, params) => ipcRenderer.invoke("test:cdp", method, params),
   testCopy: () => ipcRenderer.invoke("test:copy"),
   testClipboardImage: () => ipcRenderer.invoke("test:clipboard-image"),
 });

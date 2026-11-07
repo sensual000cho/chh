@@ -16,13 +16,14 @@ import ColorPicker from "./ColorPicker.jsx";
 import ElementColorPicker from "./ElementColorPicker.jsx";
 import ShortcutDialog from "./ShortcutDialog.jsx";
 import { arrangeItems } from "./arrange.js";
+import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
+import { isHttpUrl } from "./links.js";
 import { autosaveDelay, sceneSignature, store } from "./boardStore.js";
 import { formatAccelerator } from "./accelerator.js";
 import {
   collectImages,
   fileMime,
   insertImages,
-  isHttpUrl,
   isImageFile,
   pickDropped,
   readAsDataURL,
@@ -127,8 +128,27 @@ export default function App() {
     autosaveMs.current = performance.now() - started;
   }, []);
 
+  const noteRef = useRef(null); // 지금 글자를 쓰고 있는 메모
+  const pointerRef = useRef(null); // 마지막 마우스 위치
+
+  const startNote = useCallback((point) => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (noteRef.current) finishNote(api, noteRef.current);
+    noteRef.current = createNote(api, point);
+  }, []);
+
   const onSceneChange = useCallback(
     (els, appState) => {
+      const note = noteRef.current;
+      if (note) {
+        if (appState.editingTextElement) note.editing = true;
+        else if (note.editing) {
+          noteRef.current = null;
+          // onChange 안에서 장면을 바꾸지 않도록 다음 차례로 미룬다
+          setTimeout(() => apiRef.current && finishNote(apiRef.current, note));
+        }
+      }
       const stored = appState.viewBackgroundColor;
       const changed = stored !== lastSeenStored.current;
       lastSeenStored.current = stored;
@@ -395,17 +415,19 @@ export default function App() {
     if (!api) return;
     const selected = api.getAppState().selectedElementIds;
     const images = api.getSceneElements().filter((e) => e.type === "image" && !e.locked);
-    const picked = images.filter((e) => selected[e.id]);
-    const targets = picked.length >= 2 ? picked : images;
+    // 선택한 이미지와 선택한 묶음 안의 이미지. 선택이 없으면 묶음에 들어 있지 않은 이미지 전체.
+    const picked = images.filter((e) => selected[e.id] || selected[e.frameId]);
+    const targets = picked.length >= 2 ? picked : images.filter((e) => !e.frameId);
     if (targets.length < 2) {
       api.setToast({ message: "정렬할 이미지가 2장 이상 필요합니다." });
       return;
     }
     const places = arrangeItems(targets);
+    const moved = api
+      .getSceneElementsIncludingDeleted()
+      .map((e) => (places.has(e.id) ? newElementWith(e, places.get(e.id)) : e));
     api.updateScene({
-      elements: api
-        .getSceneElementsIncludingDeleted()
-        .map((e) => (places.has(e.id) ? newElementWith(e, places.get(e.id)) : e)),
+      elements: fitFrames(moved, new Set(targets.map((e) => e.frameId).filter(Boolean))),
       captureUpdate: CaptureUpdateAction.IMMEDIATELY,
     });
     api.scrollToContent(
@@ -413,6 +435,37 @@ export default function App() {
       { fitToContent: true },
     );
     api.setToast({ message: `이미지 ${targets.length}장을 정렬했습니다. (Ctrl+Z로 되돌리기)`, duration: 2500 });
+  }, []);
+
+  const groupSelection = useCallback(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (!wrapInGroup(api)) api.setToast({ message: "묶을 항목을 먼저 선택하세요.", duration: 2000 });
+  }, []);
+
+  const noteAtCenter = useCallback(() => {
+    if (apiRef.current) startNote(viewCenter(apiRef.current));
+  }, [startNote]);
+
+  // 보드 안 검색: 메모와 글자에서 찾는다
+  const openSearch = useCallback(() => {
+    setUiHidden(false);
+    const api = apiRef.current;
+    api?.updateScene({ appState: { openSidebar: { name: "default", tab: "search" }, openDialog: null, openMenu: null } });
+    setTimeout(() => {
+      const input = document.querySelector(".layer-ui__search input");
+      input?.focus();
+      input?.select();
+    }, 80);
+  }, []);
+
+  // N 키로 만드는 메모가 마우스 위치에 놓이도록 위치를 기억한다
+  useEffect(() => {
+    const onMove = (e) => {
+      pointerRef.current = e.target?.tagName === "CANVAS" ? { clientX: e.clientX, clientY: e.clientY } : null;
+    };
+    window.addEventListener("pointermove", onMove, true);
+    return () => window.removeEventListener("pointermove", onMove, true);
   }, []);
 
   // 파일/웹 이미지 끌어다 놓기 (.chh 파일은 보드로 열기)
@@ -438,20 +491,29 @@ export default function App() {
         if (p) openPath(p);
         return;
       }
-      const { files, urls } = pickDropped(dt);
-      if (!files.length && !urls.length) return; // 그 밖의 드롭은 Excalidraw 기본 처리
+      const { files, web } = pickDropped(dt);
+      if (!files.length && !web) return; // 그 밖의 드롭은 Excalidraw 기본 처리
       e.preventDefault();
       e.stopPropagation();
       const at = viewportCoordsToSceneCoords({ clientX: e.clientX, clientY: e.clientY }, api.getAppState());
       const sources = [];
-      for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
-      for (const u of urls) {
-        if (u.startsWith("data:")) sources.push({ dataURL: u });
+      const fromWeb = !!web;
+      for (const f of files) {
+        // 여러 파일이면 어느 파일의 주소인지 알 수 없으므로 한 장일 때만 출처를 붙인다
+        sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f), link: files.length === 1 ? web?.link : null });
+      }
+      if (!files.length && web) {
+        if (web.image.startsWith("data:")) sources.push({ dataURL: web.image, link: web.link });
         else if (chh) {
-          const r = await chh.fetchImage(u);
-          if (r?.dataURL) sources.push({ dataURL: r.dataURL });
+          const r = await chh.fetchImage(web.image, web.link);
+          if (r?.dataURL) sources.push({ dataURL: r.dataURL, link: web.link });
           else api.setToast({ message: `이미지를 가져오지 못했습니다: ${r?.error || ""}` });
-        } else api.setToast({ message: "웹 버전에서는 웹 이미지를 끌어올 수 없습니다. 이미지를 저장한 뒤 넣어 주세요." });
+        } else {
+          api.setToast({ message: "웹 버전에서는 웹 이미지를 끌어올 수 없습니다. 이미지를 저장한 뒤 넣어 주세요." });
+        }
+      }
+      if (fromWeb && sources.length === 1 && !sources[0].link) {
+        api.setToast({ message: "이 페이지는 원본 주소를 넘겨주지 않아 출처 없이 넣었습니다.", duration: 3000 });
       }
       if (sources.length) insertImages(api, sources, at, "corner");
     };
@@ -495,7 +557,7 @@ export default function App() {
         e.stopImmediatePropagation();
         const res = await chh.fetchImage(text.trim());
         if (res?.dataURL) {
-          insertImages(api, [{ dataURL: res.dataURL }], viewCenter(api), "center");
+          insertImages(api, [{ dataURL: res.dataURL, link: text.trim() }], viewCenter(api), "center");
           return;
         }
         const only = new DataTransfer();
@@ -689,6 +751,23 @@ export default function App() {
         return;
       }
 
+      // 메모(N), 묶기(Alt+G), 검색(Ctrl+F). 한글 입력 상태에서도 되도록 물리 키로 본다.
+      if (!typingNow && !e.repeat) {
+        const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+        let run = null;
+        if (plain && e.code === "KeyN") {
+          const p = pointerRef.current;
+          run = () => (p ? startNote(viewportCoordsToSceneCoords(p, api.getAppState())) : noteAtCenter());
+        } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyG") run = groupSelection;
+        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === "KeyF") run = openSearch;
+        if (run) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          run();
+          return;
+        }
+      }
+
       if (!chh || !(e.ctrlKey || e.metaKey) || e.altKey) return;
       const key = e.key.toLowerCase();
       let action = null;
@@ -702,7 +781,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [newBoard, openDialog, save]);
+  }, [newBoard, openDialog, save, startNote, noteAtCenter, groupSelection, openSearch]);
 
   // 우클릭 드래그로 창 이동 (PureRef 방식). 거의 안 움직였으면 일반 우클릭 메뉴가 뜬다.
   useEffect(() => {
@@ -777,6 +856,9 @@ export default function App() {
         clickThrough={clickThrough}
         onToggleClickThrough={toggleClickThrough}
         onArrange={arrangeImages}
+        onNote={noteAtCenter}
+        onGroup={groupSelection}
+        onSearch={openSearch}
         onOpen={openDialog}
         onSave={() => save(false)}
         onCapture={() => chh.startCapture()}
@@ -813,7 +895,16 @@ export default function App() {
             </>
           )}
           <MainMenu.Item onSelect={() => fileInputRef.current?.click()}>이미지 가져오기</MainMenu.Item>
+          <MainMenu.Item onSelect={noteAtCenter} shortcut="N">
+            새 메모
+          </MainMenu.Item>
+          <MainMenu.Item onSelect={groupSelection} shortcut="Alt+G">
+            선택 항목 묶기
+          </MainMenu.Item>
           <MainMenu.Item onSelect={arrangeImages}>이미지 자동 정렬</MainMenu.Item>
+          <MainMenu.Item onSelect={openSearch} shortcut="Ctrl+F">
+            보드에서 찾기
+          </MainMenu.Item>
           {chh && (
             <>
               <MainMenu.Item onSelect={exportReferenceImages}>레퍼런스 이미지 폴더로 저장</MainMenu.Item>
