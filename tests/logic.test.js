@@ -9,7 +9,7 @@ import { commonBounds, elementBounds, frameAt, frameBox } from "../src/sceneGeom
 import { isHttpUrl, parseDroppedLinks } from "../src/links.js";
 
 const require = createRequire(import.meta.url);
-const { atomicWrite, archiveFile } = require("../electron/fsutil.cjs");
+const { atomicWrite, archiveFile, migrateUserData } = require("../electron/fsutil.cjs");
 const { fitBounds } = require("../electron/windowBounds.cjs");
 
 describe("요소 위치 계산", () => {
@@ -162,5 +162,55 @@ describe("파일 쓰기", () => {
     const names = fs.readdirSync(backups).sort();
     expect(names).toHaveLength(5);
     expect(names[0]).toContain("20260103");
+  });
+});
+
+describe("migrateUserData", () => {
+  let dir;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "chh-migrate-"));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  const old = () => path.join(dir, "CHH");
+  const cur = () => path.join(dir, "Thinking Chair");
+  const seedOld = () => {
+    fs.mkdirSync(path.join(old(), "Local Storage", "leveldb"), { recursive: true });
+    fs.writeFileSync(path.join(old(), "settings.json"), '{"a":1}');
+    fs.writeFileSync(path.join(old(), "autosave.chh"), "board");
+    fs.writeFileSync(path.join(old(), "Local Storage", "leveldb", "x.log"), "recent");
+    fs.mkdirSync(path.join(old(), "Cache"));
+  };
+
+  it("새 폴더가 비어 있으면 사용자 데이터를 복사하고 예전 폴더는 남긴다", () => {
+    seedOld();
+    expect(migrateUserData(old(), cur())).toBe(true);
+    expect(fs.readFileSync(path.join(cur(), "settings.json"), "utf8")).toBe('{"a":1}');
+    expect(fs.readFileSync(path.join(cur(), "autosave.chh"), "utf8")).toBe("board");
+    expect(fs.existsSync(path.join(cur(), "Local Storage", "leveldb", "x.log"))).toBe(true);
+    expect(fs.existsSync(path.join(cur(), "Cache"))).toBe(false);
+    expect(fs.existsSync(path.join(old(), "settings.json"))).toBe(true);
+  });
+
+  it("Electron 이 미리 만든 파일이 있어도 복사한다", () => {
+    seedOld();
+    fs.mkdirSync(cur());
+    fs.writeFileSync(path.join(cur(), "lockfile"), "");
+    expect(migrateUserData(old(), cur())).toBe(true);
+    expect(fs.existsSync(path.join(cur(), "settings.json"))).toBe(true);
+  });
+
+  it("새 폴더를 이미 쓰고 있으면 덮어쓰지 않는다", () => {
+    seedOld();
+    fs.mkdirSync(cur());
+    fs.writeFileSync(path.join(cur(), "settings.json"), '{"new":1}');
+    expect(migrateUserData(old(), cur())).toBe(false);
+    expect(fs.readFileSync(path.join(cur(), "settings.json"), "utf8")).toBe('{"new":1}');
+    expect(fs.existsSync(path.join(cur(), "autosave.chh"))).toBe(false);
+  });
+
+  it("예전 폴더가 없으면 아무것도 하지 않는다", () => {
+    expect(migrateUserData(old(), cur())).toBe(false);
+    expect(fs.existsSync(cur())).toBe(false);
   });
 });

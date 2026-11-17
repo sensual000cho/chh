@@ -57,9 +57,12 @@ body,
   min-width: 0;
 }
 .tb-logo {
-  font-weight: 700;
-  color: #4dabf7;
-  letter-spacing: 0.5px;
+  /* 앱 아이콘의 보라색 톤 */
+  font-weight: 600;
+  color: #b9a4ff;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .tb-name {
   opacity: 0.8;

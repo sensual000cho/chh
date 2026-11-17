@@ -50,4 +50,25 @@ async function archiveFile(source, dir, keep = 5, now = new Date()) {
   return target;
 }
 
-module.exports = { atomicWrite, archiveFile };
+// 앱 이름이 바뀌면 설정 폴더도 바뀐다. 새 폴더에 아직 쓴 적이 없으면 예전 폴더의 사용자 데이터를 복사해 온다.
+// (복사이므로 예전 폴더는 그대로 남는다. 실패해도 앱은 새 폴더로 그냥 시작한다)
+const USER_DATA_ITEMS = ["autosave.chh", "autosave.json", "autosave-backups", "window.json", "settings.json", "Local Storage"];
+function migrateUserData(oldDir, newDir) {
+  try {
+    if (!fs.existsSync(oldDir) || path.resolve(oldDir) === path.resolve(newDir)) return false;
+    if (["window.json", "settings.json", "autosave.json"].some((n) => fs.existsSync(path.join(newDir, n)))) return false;
+    fs.mkdirSync(newDir, { recursive: true });
+    let copied = false;
+    for (const name of USER_DATA_ITEMS) {
+      const from = path.join(oldDir, name);
+      if (!fs.existsSync(from)) continue;
+      fs.cpSync(from, path.join(newDir, name), { recursive: true, force: false, errorOnExist: false });
+      copied = true;
+    }
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { atomicWrite, archiveFile, migrateUserData };

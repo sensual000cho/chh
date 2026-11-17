@@ -225,7 +225,7 @@ export default function App() {
 
   const boardName = filePath ? filePath.split(/[\\/]/).pop() : "새 보드";
   useEffect(() => {
-    document.title = `CHH - ${boardName}${dirty ? " •" : ""}`;
+    document.title = `Thinking Chair - ${boardName}${dirty ? " •" : ""}`;
   }, [boardName, dirty]);
 
   // 다른 보드로 넘어갈 때 지금 보드의 이미지를 메모리에서 뺀다 (실행 취소 기록도 함께 비운 뒤에만 안전하다)

@@ -1,6 +1,7 @@
-# CHH
+# Thinking Chair (생각의자)
 
-Excalidraw + PureRef 스타일 레퍼런스 보드 (Electron 데스크톱 앱).
+레퍼런스와 메모를 모아 놓고 생각을 넓히는 브레인스토밍 보드 (Excalidraw + PureRef 스타일, Electron 데스크톱 앱).
+예전 이름은 CHH 입니다. 보드 파일 확장자 `.chh` 는 그대로 씁니다.
 
 ## 기능
 - 항상 위 / 창 투명도 조절, 상단 제목 표시줄, 우클릭 드래그로 창 이동
@@ -52,6 +53,7 @@ npm run lint
 - 캔버스는 Excalidraw **라이트 테마(색 반전 필터 없음)** 로 그리고, UI 에만 다크 팔레트를 입힙니다.
   (다크 테마를 쓰면 이미지·배경 색이 원본과 달라집니다.) 다크 UI 규칙은 `npm run gen:dark-css` 로
   `src/excalidraw-dark.css` 를 자동 생성합니다. @excalidraw/excalidraw 버전을 올리면 다시 실행하세요.
-- `npm run dist` → `release/` 에 포터블(`CHH.exe`)과 설치판(`CHH-Setup.exe`)을 만들고 프로젝트 루트의 `CHH.exe`,
-  `CHH-Setup.exe`, `CHH-공유용.zip` 을 덮어씁니다. `.chh` 더블클릭 연결은 설치판에서만 등록됩니다.
+- `npm run dist` → `release/` 에 포터블(`ThinkingChair.exe`)과 설치판(`ThinkingChair-Setup.exe`)을 만들고 프로젝트 루트의
+  `ThinkingChair.exe`, `ThinkingChair-Setup.exe`, `ThinkingChair-공유용.zip` 을 덮어씁니다. `.chh` 더블클릭 연결은 설치판에서만 등록됩니다.
 - `CHH_` 로 시작하는 개발용 환경 변수는 패키징되지 않은 실행에서만 동작합니다.
+- 처음 실행할 때 예전 이름(CHH)의 설정 폴더(`%APPDATA%\CHH`)에서 설정·자동 저장·최근 파일을 새 폴더로 복사해 옵니다.

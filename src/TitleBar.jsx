@@ -91,7 +91,7 @@ export default function TitleBar({
   return (
     <div className="titlebar">
       <div className="tb-drag tb-title">
-        <span className="tb-logo">CHH</span>
+        <span className="tb-logo">Thinking Chair</span>
         <span className="tb-name">
           {name}
           {dirty ? " •" : ""}

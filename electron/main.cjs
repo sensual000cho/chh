@@ -1,4 +1,4 @@
-// CHH — Electron 메인 프로세스
+// Thinking Chair (생각의자) — Electron 메인 프로세스
 // 창 관리(항상 위, 투명도), 파일 열기/저장, 화면 캡처, 웹 이미지 가져오기를 담당한다.
 const {
   app,
@@ -16,7 +16,7 @@ const {
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
-const { atomicWrite, archiveFile } = require("./fsutil.cjs");
+const { atomicWrite, archiveFile, migrateUserData } = require("./fsutil.cjs");
 const { fitBounds } = require("./windowBounds.cjs");
 
 // 개발·테스트용 환경 변수는 패키징되지 않은 실행에서만 듣는다 (배포판에서 임의 코드가 실행되지 않도록)
@@ -26,6 +26,8 @@ const isDev = devEnv.CHH_DEV === "1";
 const quiet = !!devEnv.CHH_QUIET;
 const registerShortcut = (accel, fn) => (quiet ? true : globalShortcut.register(accel, fn));
 if (devEnv.CHH_USERDATA) app.setPath("userData", devEnv.CHH_USERDATA);
+// 이름을 CHH 에서 Thinking Chair 로 바꾸기 전의 설정·자동 저장·최근 파일을 이어서 쓴다
+else migrateUserData(path.join(app.getPath("appData"), "CHH"), app.getPath("userData"));
 const userDir = app.getPath("userData");
 const AUTOSAVE_PATH = path.join(userDir, "autosave.chh");
 const AUTOSAVE_META_PATH = path.join(userDir, "autosave.json");
@@ -142,7 +144,7 @@ function createMainWindow() {
     minHeight: 240,
     frame: false,
     backgroundColor: "#1e1e1e",
-    title: "CHH",
+    title: "Thinking Chair",
     icon: path.join(__dirname, "..", "build", "icon.png"),
     show: false,
     webPreferences: {
@@ -335,7 +337,7 @@ if (devEnv.CHH_TEST) {
 }
 
 // ---------- 파일 IPC ----------
-const BOARD_FILTERS = [{ name: "CHH 보드", extensions: ["chh"] }];
+const BOARD_FILTERS = [{ name: "Thinking Chair 보드", extensions: ["chh"] }];
 
 ipcMain.handle("file:open-dialog", async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
@@ -477,7 +479,7 @@ ipcMain.handle("file:export-images", async (_e, images) => {
 
 // 복사한 이미지 하나를 OS 클립보드에 비트맵으로도 넣는다.
 // Excalidraw 는 요소 JSON(텍스트)만 복사하므로 PureRef 등 외부 앱은 이미지로 인식하지 못한다.
-// 텍스트(JSON)는 그대로 두어 CHH 안에서의 붙여넣기(크기·위치 유지)는 유지한다.
+// 텍스트(JSON)는 그대로 두어 앱 안에서의 붙여넣기(크기·위치 유지)는 유지한다.
 ipcMain.handle("clipboard:add-image", async (_e, pngDataURL) => {
   const image = nativeImage.createFromDataURL(pngDataURL || "");
   if (image.isEmpty()) return false;
