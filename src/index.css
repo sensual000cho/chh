@@ -311,3 +311,91 @@ button.cp-slot:hover { filter: brightness(1.15); }
 .cp-slot.edit { box-shadow: 0 0 0 2px #f5b400, inset 0 0 0 2px #fff; }
 .cp-save { color: #a0a0aa; font: 16px/1 "Segoe UI", sans-serif; cursor: pointer; }
 .cp-save:hover { background: #2a2a32; color: #fff; }
+
+/* CHH 도움말: Excalidraw 도움말과 같은 모양 */
+.help-dlg {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  background: #fff;
+  color: #1b1b1f;
+  border-radius: 12px;
+  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.45);
+  font: 14px "Segoe UI", "Malgun Gothic", sans-serif;
+}
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 32px;
+  padding: 24px 0 14px;
+  border-bottom: 1px solid #e6e6ea;
+}
+.help-head h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.help-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #5b5b66;
+  font-size: 16px;
+  cursor: pointer;
+}
+.help-close:hover { background: #f1f0ff; }
+.help-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  padding: 20px 32px;
+  overflow-y: auto;
+}
+.help-col { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.help-island h4 { margin: 0 0 10px; font-size: 16px; font-weight: 700; }
+.help-island-content { border: 1px solid #e6e6ea; border-radius: 8px; }
+.help-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #e6e6ea;
+  font-size: 14px;
+}
+.help-shortcut:last-child { border-bottom: none; }
+.help-keys { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.help-key {
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: #e3e2fe;
+  color: #1b1b1f;
+  font-size: 11px;
+  line-height: 1;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.help-or { margin: 0 2px; font-size: 13px; color: #5b5b66; }
+.help-hint { font-size: 12px; color: #7a7a85; white-space: nowrap; }
+.help-foot { display: flex; justify-content: flex-end; padding: 0 32px 20px; }
+.help-btn {
+  padding: 10px 16px;
+  border: 1px solid #e3e2fe;
+  border-radius: 8px;
+  background: #f1f0ff;
+  color: #1b1b1f;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+.help-btn:hover { background: #e3e2fe; }
+@media (max-width: 720px) {
+  .help-body { grid-template-columns: 1fr; padding: 16px; }
+  .help-head { margin: 0 16px; }
+  .help-foot { padding: 0 16px 16px; }
+}
+
+/* Excalidraw 도움말: 외부 링크(설명서·블로그·문제 제보·YouTube) 숨김 */
+.HelpDialog__header { display: none !important; }

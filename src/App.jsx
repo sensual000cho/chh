@@ -15,6 +15,7 @@ import TitleBar from "./TitleBar.jsx";
 import ColorPicker from "./ColorPicker.jsx";
 import ElementColorPicker from "./ElementColorPicker.jsx";
 import ShortcutDialog from "./ShortcutDialog.jsx";
+import HelpDialog from "./HelpDialog.jsx";
 import { arrangeItems } from "./arrange.js";
 import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
 import { isHttpUrl } from "./links.js";
@@ -60,11 +61,13 @@ export default function App() {
   const [dirty, setDirty] = useState(false); // 파일에 저장되지 않은 변경이 있는가
   const [clickThrough, setClickThrough] = useState(false);
   const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const editorHelpRef = useRef(false); // CHH 도움말에서 "그리기 단축키"를 눌러 연 Excalidraw 도움말인가
   const [captureKey, setCaptureKey] = useState("CommandOrControl+Shift+X");
   const uiHiddenRef = useRef(false);
   uiHiddenRef.current = uiHidden;
   const modalRef = useRef(false); // 우리 대화상자가 떠 있는 동안 전역 단축키를 쉬게 한다
-  modalRef.current = shortcutOpen;
+  modalRef.current = shortcutOpen || helpOpen;
   const bodyRef = useRef(null);
   const fileInputRef = useRef(null);
   const apiRef = useRef(null);
@@ -140,6 +143,15 @@ export default function App() {
 
   const onSceneChange = useCallback(
     (els, appState) => {
+      // Excalidraw 도움말(? 버튼, ? 키)은 CHH 도움말로 돌린다. CHH 도움말의 "그리기 단축키"로 연 경우만 그대로 둔다.
+      if (appState.openDialog?.name === "help") {
+        if (!editorHelpRef.current) {
+          setTimeout(() => {
+            apiRef.current?.updateScene({ appState: { openDialog: null } });
+            setHelpOpen(true);
+          });
+        }
+      } else editorHelpRef.current = false;
       const note = noteRef.current;
       if (note) {
         if (appState.editingTextElement) note.editing = true;
@@ -704,6 +716,14 @@ export default function App() {
         e.target instanceof HTMLElement &&
         (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
 
+      // F1: CHH 도움말
+      if (e.key === "F1" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setHelpOpen(true);
+        return;
+      }
+
       // Tab: 모든 UI 켜기/끄기
       if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey && !typingNow) {
         e.preventDefault();
@@ -946,7 +966,9 @@ export default function App() {
               />
             </div>
           </MainMenu.ItemCustom>
-          <MainMenu.DefaultItems.Help />
+          <MainMenu.Item onSelect={() => setHelpOpen(true)} shortcut="F1">
+            도움말
+          </MainMenu.Item>
           <MainMenu.DefaultItems.ClearCanvas />
 
           {chh && (
@@ -981,6 +1003,18 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
+      {helpOpen && (
+        <HelpDialog
+          desktop={!!chh}
+          captureKey={captureKey}
+          onClose={() => setHelpOpen(false)}
+          onShowEditorHelp={() => {
+            setHelpOpen(false);
+            editorHelpRef.current = true;
+            api?.updateScene({ appState: { openDialog: { name: "help" } } });
+          }}
+        />
+      )}
       {shortcutOpen && (
         <ShortcutDialog
           current={captureKey}
