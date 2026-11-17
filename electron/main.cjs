@@ -102,10 +102,11 @@ let splash = null;
 let splashShownAt = 0;
 function showSplash() {
   splash = new BrowserWindow({
-    width: 240,
-    height: 240,
+    // 휴대용 exe 가 압축을 푸는 동안 보여 주는 build/splash.bmp 와 같은 크기·모양이라 자연스럽게 이어진다
+    width: 280,
+    height: 280,
     frame: false,
-    transparent: true,
+    backgroundColor: "#1e1e1e",
     resizable: false,
     movable: false,
     skipTaskbar: true,

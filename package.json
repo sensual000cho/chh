@@ -42,6 +42,7 @@
   "build": {
     "appId": "com.chh.app",
     "productName": "CHH",
+    "compression": "store",
     "directories": {
       "output": "release"
     },
@@ -64,7 +65,8 @@
       "artifactName": "CHH-Setup.exe"
     },
     "portable": {
-      "artifactName": "CHH.exe"
+      "artifactName": "CHH.exe",
+      "splashImage": "build/splash.bmp"
     },
     "electronLanguages": [
       "ko",
