@@ -1,9 +1,71 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+// Excalidraw 의 확대/축소 범위(10% ~ 3000%)와 방식은 설정으로 바꿀 수 없어서 번들을 읽을 때 코드를 바꾼다.
+// - 범위: 1% ~ 300% (레퍼런스 보드라 크게 확대할 일은 적고, 멀리서 내려다볼 일이 많다)
+// - 단계: 원래는 0.1(10%p)씩 더하고 빼서 10% 아래에선 한 번에 최소로 떨어진다.
+//         배율에 비례해 바뀌게(한 칸에 ZOOM_RATIO 배) 해서 낮은 배율에서도 조금씩 움직이게 한다.
+const MIN_ZOOM = 0.01;
+const MAX_ZOOM = 3;
+const ZOOM_RATIO = 1.2;
+
+// [이름, 찾을 식, 바꿀 내용] — 개발판(풀린 코드)과 배포판(압축 코드) 모두에 맞게 썼다
+const PATCHES = [
+  // 상수: 개발판 "var MIN_ZOOM = 0.1;\nvar MAX_ZOOM = 30;", 배포판 "ZOOM_STEP=.1,MIN_ZOOM=.1,MAX_ZOOM=30,"
+  ["최소 배율(개발판)", /\bMIN_ZOOM = 0\.1;/, `MIN_ZOOM = ${MIN_ZOOM};`],
+  ["최대 배율(개발판)", /\bMAX_ZOOM = 30;/, `MAX_ZOOM = ${MAX_ZOOM};`],
+  ["배율 범위(배포판)", /(=\.1,[\w$]+=)\.1(,[\w$]+=)30,/, `$1${MIN_ZOOM}$2${MAX_ZOOM},`],
+  // 확대/축소 버튼과 Ctrl+/-: zoom.value ± ZOOM_STEP → zoom.value ×/÷ ZOOM_RATIO
+  [
+    "버튼 단계",
+    /(nextZoom: ?[\w$]+\([\w$]+\.zoom\.value) ?([+-]) ?[\w$]+\)/g,
+    (_, head, op) => `${head} ${op === "+" ? "*" : "/"} ${ZOOM_RATIO})`,
+  ],
+  // Ctrl+휠: zoom.value - delta/100 (+ 100% 이상에서 덤) → 휠 한 칸에 ZOOM_RATIO 배
+  // (Excalidraw 가 delta 를 ±10 으로 자르므로 휠 한 칸 = delta 10)
+  [
+    "휠 단계",
+    /([\w$]+) ?= ?this\.state\.zoom\.value ?- ?([\w$]+) ?\/ ?100;/,
+    `$1 = this.state.zoom.value * Math.pow(${ZOOM_RATIO}, -$2 / 10);`,
+  ],
+  ["휠 덤 제거", /Math\.log10\(Math\.max\(1, ?this\.state\.zoom\.value\)\)/, "0"],
+  // 화면에 맞추기: 0.1 단위로 내림하면 10% 아래에선 0 → 최소 배율이 되므로 0.01 단위로 내림
+  [
+    "맞추기 단위",
+    /(\([\w$]+, ?)[\w$]+(, ?"floor"\), ?[\w$]+, ?[\w$]+\))/,
+    `$1${MIN_ZOOM}$2`,
+  ],
+];
+
+function excalidrawZoom() {
+  const applied = new Set();
+  return {
+    name: "chh-excalidraw-zoom",
+    transform(code, id) {
+      if (!/[\\/]@excalidraw[\\/]excalidraw[\\/]dist[\\/]/.test(id)) return null;
+      let next = code;
+      for (const [name, re, to] of PATCHES) {
+        const before = next;
+        next = next.replace(re, to);
+        if (next !== before) applied.add(name);
+      }
+      return next === code ? null : { code: next, map: null };
+    },
+    // Excalidraw 를 올린 뒤 코드 모양이 바뀌어 고치지 못하면 조용히 넘어가지 않고 빌드를 멈춘다
+    generateBundle() {
+      const dev = applied.has("최소 배율(개발판)") || applied.has("최대 배율(개발판)");
+      const need = PATCHES.map(([n]) => n).filter((n) => !n.includes(dev ? "배포판" : "개발판"));
+      const missing = need.filter((n) => !applied.has(n));
+      if (applied.size && missing.length) this.error(`Excalidraw 배율 패치를 못 했습니다: ${missing.join(", ")}`);
+    },
+  };
+}
+
 // Electron이 file:// 로 dist/index.html 을 열기 때문에 상대 경로로 빌드한다.
 export default defineConfig({
   base: "./",
-  plugins: [react()],
+  plugins: [react(), excalidrawZoom()],
+  // 개발 서버는 의존성을 미리 묶어 두므로 그 단계에도 같은 처리를 건다
+  optimizeDeps: { rolldownOptions: { plugins: [excalidrawZoom()] } },
   server: { port: 5173, strictPort: true },
 });

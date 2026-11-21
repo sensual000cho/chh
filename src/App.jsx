@@ -7,6 +7,7 @@ import ColorPicker from "./ColorPicker.jsx";
 import ElementColorPicker from "./ElementColorPicker.jsx";
 import ShortcutDialog from "./ShortcutDialog.jsx";
 import HelpDialog from "./HelpDialog.jsx";
+import ZoomBadge from "./ZoomBadge.jsx";
 import { arrangeItems } from "./arrange.js";
 import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
 import { formatAccelerator } from "./accelerator.js";
@@ -391,6 +392,7 @@ export default function App() {
           )}
         </MainMenu>
       </Excalidraw>
+      <ZoomBadge api={api} />
       {helpOpen && (
         <HelpDialog
           desktop={!!chh}
