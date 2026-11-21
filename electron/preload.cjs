@@ -44,6 +44,7 @@ contextBridge.exposeInMainWorld("chh", {
 
   // 클립보드
   addImageToClipboard: (pngDataURL) => ipcRenderer.invoke("clipboard:add-image", pngDataURL),
+  internalClipboard: () => ipcRenderer.invoke("clipboard:internal"),
 
   // 캡처
   startCapture: () => ipcRenderer.send("capture:start"),

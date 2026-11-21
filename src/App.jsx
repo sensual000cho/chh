@@ -1,14 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Excalidraw,
-  MainMenu,
-  convertToExcalidrawElements,
-  CaptureUpdateAction,
-  loadFromBlob,
-  newElementWith,
-  serializeAsJSON,
-  viewportCoordsToSceneCoords,
-} from "@excalidraw/excalidraw";
+import { Excalidraw, MainMenu, CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import "@excalidraw/excalidraw/index.css";
 import "./excalidraw-dark.css"; // 라이트 테마(필터 없음) 위에 다크 UI 팔레트를 입힌다 (npm run gen:dark-css)
 import TitleBar from "./TitleBar.jsx";
@@ -18,25 +9,17 @@ import ShortcutDialog from "./ShortcutDialog.jsx";
 import HelpDialog from "./HelpDialog.jsx";
 import { arrangeItems } from "./arrange.js";
 import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
-import { isHttpUrl } from "./links.js";
-import { autosaveDelay, sceneSignature, store } from "./boardStore.js";
 import { formatAccelerator } from "./accelerator.js";
-import {
-  collectImages,
-  fileMime,
-  insertImages,
-  isImageFile,
-  pickDropped,
-  readAsDataURL,
-  toPngDataURL,
-  viewCenter,
-} from "./images.js";
+import { collectImages, fileMime, insertImages, isImageFile, readAsDataURL, viewCenter } from "./images.js";
 import { BG_PRESETS } from "./color.js";
-import { addRecent, clearRecent, formatWhen, loadRecent, removeRecent } from "./recentFiles.js";
-
-// Electron preload 가 노출하는 window.chh API (electron/preload.cjs) 는
-// 브라우저(npm run dev)에서는 없으므로 항상 optional 로 접근한다.
-const chh = window.chh;
+import { clearRecent, formatWhen } from "./recentFiles.js";
+import { chh } from "./chh.js";
+import { useBoardDocument } from "./hooks/useBoardDocument.js";
+import { useClipboardBridge } from "./hooks/useClipboardBridge.js";
+import { useDropImport } from "./hooks/useDropImport.js";
+import { useHotkeys } from "./hooks/useHotkeys.js";
+import { useTitleBarPeek, useWindowDrag } from "./hooks/useWindowChrome.js";
+import { useCaptureAndToasts, useDesktopState } from "./hooks/useDesktopEvents.js";
 
 const BG_KEY = "chh.bg";
 const DEFAULT_STROKE = "#e6e6e6"; // 어두운 배경에서 잘 보이는 기본 선/글자 색
@@ -50,33 +33,37 @@ function loadBg() {
 
 export default function App() {
   const [api, setApi] = useState(null);
-  const [filePath, setFilePath] = useState(null);
-  const [recent, setRecent] = useState(loadRecent);
+  const apiRef = useRef(null);
+  apiRef.current = api;
   const [initialBg] = useState(loadBg);
   const [bg, setBg] = useState(initialBg); // 화면에 보이는 캔버스 배경색
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState(null);
   const [elPicker, setElPicker] = useState(null); // 요소 선/배경 색 선택기 { type, left, top }
-  const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
-  const [dirty, setDirty] = useState(false); // 파일에 저장되지 않은 변경이 있는가
-  const [clickThrough, setClickThrough] = useState(false);
-  const [shortcutOpen, setShortcutOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const editorHelpRef = useRef(false); // CHH 도움말에서 "그리기 단축키"를 눌러 연 Excalidraw 도움말인가
-  const [captureKey, setCaptureKey] = useState("CommandOrControl+Shift+X");
-  const uiHiddenRef = useRef(false);
-  uiHiddenRef.current = uiHidden;
-  const modalRef = useRef(false); // 우리 대화상자가 떠 있는 동안 전역 단축키를 쉬게 한다
-  modalRef.current = shortcutOpen || helpOpen;
-  const bodyRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const apiRef = useRef(null);
-  apiRef.current = api;
-  const pickerOpenRef = useRef(false);
-  pickerOpenRef.current = pickerOpen;
   const elPickerRef = useRef(null);
   elPickerRef.current = elPicker;
+  const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
+  const [shortcutOpen, setShortcutOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const editorHelpRef = useRef(false); // 앱 도움말에서 "그리기 단축키"를 눌러 연 Excalidraw 도움말인가
+  const bodyRef = useRef(null);
+  const fileInputRef = useRef(null);
   const appliedStored = useRef(initialBg); // 마지막으로 우리가 적용한 viewBackgroundColor
+  const lastSeenStored = useRef(null);
+
+  const { filePath, boardName, dirty, recent, setRecent, trackChange, save, openPath, openDialog, newBoard } =
+    useBoardDocument({
+      api,
+      apiRef,
+      initialBg,
+      newBoardState: () => ({ viewBackgroundColor: appliedStored.current, currentItemStrokeColor: DEFAULT_STROKE }),
+    });
+  const { clickThrough, toggleClickThrough, captureKey, setCaptureKey } = useDesktopState(api);
+  useCaptureAndToasts(api);
+  useClipboardBridge(api);
+  useDropImport(api, bodyRef, openPath);
+  useWindowDrag();
+  const tbPeek = useTitleBarPeek(uiHidden);
 
   const applyBg = useCallback((color) => {
     appliedStored.current = color;
@@ -87,63 +74,21 @@ export default function App() {
     apiRef.current?.updateScene({ appState: { viewBackgroundColor: color } });
   }, []);
 
-  // 파일 열기 등 바깥에서 배경이 바뀌면 선택 표시를 맞춘다
-  // (적용 직후 이전 상태로 한 번 더 알림이 올 수 있어서, 직전에 본 값과 같으면 무시한다)
-  const lastSeenStored = useRef(null);
-  const autosaveReady = useRef(false); // 시작 시 복원이 끝나기 전에는 자동 저장본을 덮어쓰지 않는다
-  const autosaveTimer = useRef(0);
-  const autosaveMs = useRef(0); // 지난번 자동 저장에 걸린 시간
-  const lastSig = useRef(null); // 마지막으로 자동 저장을 예약한 장면
-  const savedSig = useRef(null); // 파일과 같은 상태의 장면
-  const dirtyRef = useRef(false);
-  const filePathRef = useRef(null);
-
-  const serialize = (api) => serializeAsJSON(api.getSceneElements(), api.getAppState(), api.getFiles(), "local");
-
-  const setDirtyNow = useCallback((v) => {
-    dirtyRef.current = v;
-    setDirty(v);
-  }, []);
-
-  const markClean = useCallback(
-    (sig) => {
-      savedSig.current = sig;
-      lastSig.current = sig;
-      setDirtyNow(false);
-    },
-    [setDirtyNow],
-  );
-
-  // 변경이 있으면 내용까지, 없으면 "파일과 같다"는 표시만 남긴다 (큰 보드를 괜히 다시 쓰지 않도록)
-  const writeAutosave = useCallback(async () => {
-    clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = 0;
-    const api = apiRef.current;
-    if (!api) return;
-    const meta = { filePath: filePathRef.current, dirty: dirtyRef.current };
-    if (!meta.dirty) {
-      await store.writeMeta(meta);
-      return;
-    }
-    const started = performance.now();
-    const content = serialize(api);
-    await store.write(content, meta);
-    autosaveMs.current = performance.now() - started;
-  }, []);
-
+  // ---- 메모 ----
   const noteRef = useRef(null); // 지금 글자를 쓰고 있는 메모
-  const pointerRef = useRef(null); // 마지막 마우스 위치
-
   const startNote = useCallback((point) => {
     const api = apiRef.current;
     if (!api) return;
     if (noteRef.current) finishNote(api, noteRef.current);
     noteRef.current = createNote(api, point);
   }, []);
+  const noteAtCenter = useCallback(() => {
+    if (apiRef.current) startNote(viewCenter(apiRef.current));
+  }, [startNote]);
 
   const onSceneChange = useCallback(
     (els, appState) => {
-      // Excalidraw 도움말(? 버튼, ? 키)은 CHH 도움말로 돌린다. CHH 도움말의 "그리기 단축키"로 연 경우만 그대로 둔다.
+      // Excalidraw 도움말(? 버튼, ? 키)은 앱 도움말로 돌린다. 앱 도움말의 "그리기 단축키"로 연 경우만 그대로 둔다.
       if (appState.openDialog?.name === "help") {
         if (!editorHelpRef.current) {
           setTimeout(() => {
@@ -161,6 +106,8 @@ export default function App() {
           setTimeout(() => apiRef.current && finishNote(apiRef.current, note));
         }
       }
+      // 파일 열기 등 바깥에서 배경이 바뀌면 선택 표시를 맞춘다
+      // (적용 직후 이전 상태로 한 번 더 알림이 올 수 있어서, 직전에 본 값과 같으면 무시한다)
       const stored = appState.viewBackgroundColor;
       const changed = stored !== lastSeenStored.current;
       lastSeenStored.current = stored;
@@ -168,17 +115,9 @@ export default function App() {
         appliedStored.current = stored;
         setBg(stored);
       }
-      if (!autosaveReady.current) return;
-      // 화면 이동/확대만 바뀐 경우는 건너뛰도록 요소 버전 합과 배경색으로 변경 여부를 본다
-      const sig = sceneSignature(els, stored);
-      if (sig === lastSig.current) return;
-      lastSig.current = sig;
-      const isDirty = sig !== savedSig.current;
-      if (isDirty !== dirtyRef.current) setDirtyNow(isDirty);
-      clearTimeout(autosaveTimer.current);
-      autosaveTimer.current = setTimeout(writeAutosave, autosaveDelay(autosaveMs.current));
+      trackChange(els, stored);
     },
-    [setDirtyNow, writeAutosave],
+    [trackChange],
   );
 
   // 색상 선택 창 바깥을 누르면 닫는다
@@ -223,183 +162,7 @@ export default function App() {
     };
   }, []);
 
-  const boardName = filePath ? filePath.split(/[\\/]/).pop() : "새 보드";
-  useEffect(() => {
-    document.title = `Thinking Chair - ${boardName}${dirty ? " •" : ""}`;
-  }, [boardName, dirty]);
-
-  // 다른 보드로 넘어갈 때 지금 보드의 이미지를 메모리에서 뺀다 (실행 취소 기록도 함께 비운 뒤에만 안전하다)
-  const dropUnusedFiles = (api, elements) => {
-    const used = new Set(elements.map((e) => e.fileId).filter(Boolean));
-    const files = api.getFiles();
-    for (const id of Object.keys(files)) if (!used.has(id)) delete files[id];
-  };
-
-  const openContent = useCallback(
-    async (path, content, { restoredDirty = false } = {}) => {
-      const api = apiRef.current;
-      if (!api) return false;
-      clearTimeout(autosaveTimer.current);
-      autosaveTimer.current = 0;
-      autosaveReady.current = false;
-      try {
-        const blob = new Blob([content], { type: "application/json" });
-        const scene = await loadFromBlob(blob, null, null);
-        api.updateScene({
-          elements: scene.elements,
-          // 파일에 저장된 테마 대신 지금 쓰는 테마를 유지한다.
-          appState: { ...scene.appState, theme: api.getAppState().theme, openMenu: null },
-        });
-        api.addFiles(Object.values(scene.files || {}));
-        api.history.clear();
-        dropUnusedFiles(api, scene.elements);
-        api.scrollToContent(undefined, { fitToContent: true });
-        filePathRef.current = path;
-        setFilePath(path);
-        const sig = sceneSignature(api.getSceneElementsIncludingDeleted(), scene.appState.viewBackgroundColor);
-        if (restoredDirty) {
-          // 자동 저장본 복원: 파일과 다른 상태이므로 저장 안 됨으로 표시한다
-          savedSig.current = null;
-          lastSig.current = sig;
-          setDirtyNow(true);
-        } else {
-          markClean(sig);
-          store.writeMeta({ filePath: path, dirty: false });
-          if (path) setRecent(addRecent(path));
-        }
-        return true;
-      } catch (err) {
-        api.setToast({ message: `보드를 열 수 없습니다: ${err.message || err}` });
-        return false;
-      } finally {
-        autosaveReady.current = true;
-      }
-    },
-    [markClean, setDirtyNow],
-  );
-
-  const save = useCallback(
-    async (saveAs = false) => {
-      const api = apiRef.current;
-      if (!api || !chh) return false;
-      const sig = sceneSignature(api.getSceneElementsIncludingDeleted(), api.getAppState().viewBackgroundColor);
-      const content = serialize(api);
-      const res = await chh.save({ filePath: filePathRef.current, content, saveAs });
-      if (!res) return false;
-      if (res.error) {
-        api.setToast({ message: `저장 실패: ${res.error}` });
-        return false;
-      }
-      filePathRef.current = res.path;
-      setFilePath(res.path);
-      setRecent(addRecent(res.path));
-      // 저장하는 동안 더 그렸다면 그만큼은 여전히 저장 안 된 상태다
-      savedSig.current = sig;
-      const now = sceneSignature(api.getSceneElementsIncludingDeleted(), api.getAppState().viewBackgroundColor);
-      setDirtyNow(now !== sig);
-      await writeAutosave();
-      api.setToast({ message: "저장했습니다.", duration: 1500 });
-      return true;
-    },
-    [setDirtyNow, writeAutosave],
-  );
-
-  // 지금 보드를 떠나도 되는지 확인한다: "clean" | "saved" | "discarded" | null(취소)
-  const confirmLeave = useCallback(async () => {
-    if (!dirtyRef.current) return "clean";
-    const name = filePathRef.current ? filePathRef.current.split(/[\\/]/).pop() : "새 보드";
-    const answer = chh
-      ? await chh.askUnsaved(name)
-      : window.confirm(`"${name}"의 변경 내용을 버릴까요?`)
-        ? "discard"
-        : "cancel";
-    if (answer === "cancel") return null;
-    if (answer === "save") return (await save(false)) ? "saved" : null;
-    // 버리더라도 복사본은 백업 폴더에 남긴다
-    await writeAutosave();
-    await store.archive();
-    return "discarded";
-  }, [save, writeAutosave]);
-
-  const openPath = useCallback(
-    async (path) => {
-      const res = await chh?.readFile(path);
-      if (!res || res.error) {
-        // 정말 없는 파일만 목록에서 뺀다. 잠겨 있거나 외장 드라이브가 빠진 경우는 남겨 둔다.
-        const missing = res?.code === "ENOENT";
-        if (missing) setRecent(removeRecent(path));
-        apiRef.current?.setToast({
-          message: missing ? "파일을 찾을 수 없어 목록에서 뺐습니다." : `파일을 읽지 못했습니다: ${res?.error || ""}`,
-        });
-        return false;
-      }
-      if (!(await confirmLeave())) return false;
-      return openContent(res.path, res.content);
-    },
-    [confirmLeave, openContent],
-  );
-
-  const openDialog = useCallback(async () => {
-    const res = await chh?.openDialog();
-    if (!res) return;
-    if (res.error) {
-      apiRef.current?.setToast({ message: `파일을 읽지 못했습니다: ${res.error}` });
-      return;
-    }
-    if (await confirmLeave()) openContent(res.path, res.content);
-  }, [confirmLeave, openContent]);
-
-  const newBoard = useCallback(async () => {
-    const api = apiRef.current;
-    if (!api || !(await confirmLeave())) return;
-    clearTimeout(autosaveTimer.current);
-    autosaveTimer.current = 0;
-    autosaveReady.current = false;
-    api.resetScene();
-    api.history.clear();
-    dropUnusedFiles(api, []);
-    api.updateScene({
-      appState: { viewBackgroundColor: appliedStored.current, currentItemStrokeColor: DEFAULT_STROKE },
-    });
-    filePathRef.current = null;
-    setFilePath(null);
-    markClean(sceneSignature(api.getSceneElementsIncludingDeleted(), appliedStored.current));
-    await store.writeMeta({ filePath: null, dirty: false });
-    autosaveReady.current = true;
-  }, [confirmLeave, markClean]);
-
-  // 창 닫기 요청: 저장 확인을 마친 뒤에 메인 프로세스에 답한다
-  useEffect(() => {
-    if (!chh?.onCloseRequest) return;
-    return chh.onCloseRequest(async () => {
-      chh.closeAck();
-      let ok = true;
-      try {
-        const result = await confirmLeave();
-        if (!result) ok = false;
-        else if (result === "discarded") {
-          dirtyRef.current = false;
-          if (filePathRef.current) await store.writeMeta({ filePath: filePathRef.current, dirty: false });
-          else await store.clear();
-        } else await writeAutosave(); // 예약된 자동 저장이 남아 있으면 마무리한다
-      } catch (err) {
-        console.error(err);
-      }
-      chh.closeResponse(ok);
-    });
-  }, [confirmLeave, writeAutosave]);
-
-  // 웹: 아직 자동 저장하지 못한 변경이 있으면 새로고침 전에 묻는다
-  useEffect(() => {
-    if (chh) return;
-    const onBefore = (e) => {
-      if (autosaveTimer.current) e.preventDefault();
-    };
-    window.addEventListener("beforeunload", onBefore);
-    return () => window.removeEventListener("beforeunload", onBefore);
-  }, []);
-
-  // ---- 이미지 가져오기 ----
+  // ---- 이미지 ----
   const importPicked = useCallback(async (fileList) => {
     const files = [...fileList].filter(isImageFile);
     if (!files.length || !apiRef.current) return;
@@ -455,10 +218,6 @@ export default function App() {
     if (!wrapInGroup(api)) api.setToast({ message: "묶을 항목을 먼저 선택하세요.", duration: 2000 });
   }, []);
 
-  const noteAtCenter = useCallback(() => {
-    if (apiRef.current) startNote(viewCenter(apiRef.current));
-  }, [startNote]);
-
   // 보드 안 검색: 메모와 글자에서 찾는다
   const openSearch = useCallback(() => {
     setUiHidden(false);
@@ -471,401 +230,30 @@ export default function App() {
     }, 80);
   }, []);
 
-  // N 키로 만드는 메모가 마우스 위치에 놓이도록 위치를 기억한다
-  useEffect(() => {
-    const onMove = (e) => {
-      pointerRef.current = e.target?.tagName === "CANVAS" ? { clientX: e.clientX, clientY: e.clientY } : null;
-    };
-    window.addEventListener("pointermove", onMove, true);
-    return () => window.removeEventListener("pointermove", onMove, true);
-  }, []);
-
-  // 파일/웹 이미지 끌어다 놓기 (.chh 파일은 보드로 열기)
-  useEffect(() => {
-    const el = bodyRef.current;
-    if (!el || !api) return;
-    const types = (dt) => [...(dt?.types || [])];
-    const onOver = (e) => {
-      const t = types(e.dataTransfer);
-      if (t.includes("Files") || t.includes("text/uri-list") || t.includes("text/html")) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-      }
-    };
-    const onDrop = async (e) => {
-      const dt = e.dataTransfer;
-      // .excalidraw 도 여기서 연다. 기본 처리에 맡기면 내용만 바뀌고 저장 경로는 이전 파일로 남는다.
-      const board = [...(dt.files || [])].find((f) => /\.(chh|excalidraw)$/i.test(f.name));
-      if (board && chh) {
-        e.preventDefault();
-        e.stopPropagation();
-        const p = chh.pathForFile(board);
-        if (p) openPath(p);
-        return;
-      }
-      const { files, web } = pickDropped(dt);
-      if (!files.length && !web) return; // 그 밖의 드롭은 Excalidraw 기본 처리
-      e.preventDefault();
-      e.stopPropagation();
-      const at = viewportCoordsToSceneCoords({ clientX: e.clientX, clientY: e.clientY }, api.getAppState());
-      const sources = [];
-      const fromWeb = !!web;
-      for (const f of files) {
-        // 여러 파일이면 어느 파일의 주소인지 알 수 없으므로 한 장일 때만 출처를 붙인다
-        sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f), link: files.length === 1 ? web?.link : null });
-      }
-      if (!files.length && web) {
-        if (web.image.startsWith("data:")) sources.push({ dataURL: web.image, link: web.link });
-        else if (chh) {
-          const r = await chh.fetchImage(web.image, web.link);
-          if (r?.dataURL) sources.push({ dataURL: r.dataURL, link: web.link });
-          else api.setToast({ message: `이미지를 가져오지 못했습니다: ${r?.error || ""}` });
-        } else {
-          api.setToast({ message: "웹 버전에서는 웹 이미지를 끌어올 수 없습니다. 이미지를 저장한 뒤 넣어 주세요." });
-        }
-      }
-      if (fromWeb && sources.length === 1 && !sources[0].link) {
-        api.setToast({ message: "이 페이지는 원본 주소를 넘겨주지 않아 출처 없이 넣었습니다.", duration: 3000 });
-      }
-      if (sources.length) insertImages(api, sources, at, "corner");
-    };
-    el.addEventListener("dragover", onOver, true);
-    el.addEventListener("drop", onDrop, true);
-    return () => {
-      el.removeEventListener("dragover", onOver, true);
-      el.removeEventListener("drop", onDrop, true);
-    };
-  }, [api, openPath]);
-
-  // 이미지 하나를 복사하면 OS 클립보드에 비트맵도 함께 넣어 PureRef 등 외부 앱에 붙여넣을 수 있게 한다.
-  // (Excalidraw 는 요소 JSON 텍스트만 복사한다 → PureRef 가 수백만 글자의 노트로 붙여넣으려 함)
-  useEffect(() => {
-    if (!api || !chh?.addImageToClipboard) return;
-    const onCopy = () => {
-      const s = api.getAppState();
-      const sel = api.getSceneElements().filter((el) => s.selectedElementIds[el.id]);
-      if (sel.length !== 1 || sel[0].type !== "image") return;
-      const file = api.getFiles()[sel[0].fileId];
-      if (!file?.dataURL) return;
-      // Excalidraw 의 텍스트 복사(비동기)가 끝난 뒤 이미지를 덧붙인다.
-      setTimeout(async () => {
-        try {
-          await chh.addImageToClipboard(await toPngDataURL(file.dataURL));
-        } catch {}
-      }, 150);
-    };
-    // 반대로 CHH 안에서 붙여넣을 때는 Excalidraw 가 이미지 파일을 JSON 보다 우선하므로,
-    // 우리 요소 JSON 이 있으면 이미지를 뺀 붙여넣기 이벤트로 바꿔 크기·위치를 그대로 살린다.
-    // 외부 이미지는 insertImages 로 넣어 파일 선택/드롭과 같은 크기 규칙을 따르게 한다.
-    const onPaste = async (e) => {
-      const dt = e.clipboardData;
-      if (!e.isTrusted || !dt) return;
-      const text = dt.getData("text/plain");
-      const typing = /^(input|textarea)$/i.test(e.target?.tagName) || e.target?.isContentEditable;
-      if (!dt.files?.length) {
-        // 이미지 주소를 붙여넣으면 받아서 넣고, 이미지가 아니면 원래대로 글자 붙여넣기를 한다
-        if (typing || !isHttpUrl(text) || !chh) return;
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const res = await chh.fetchImage(text.trim());
-        if (res?.dataURL) {
-          insertImages(api, [{ dataURL: res.dataURL, link: text.trim() }], viewCenter(api), "center");
-          return;
-        }
-        const only = new DataTransfer();
-        only.setData("text/plain", text);
-        document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: only, bubbles: true }));
-        return;
-      }
-      if (text.includes('"excalidraw/clipboard"')) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const only = new DataTransfer();
-        only.setData("text/plain", text);
-        document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: only, bubbles: true }));
-        return;
-      }
-      const files = [...dt.files].filter(isImageFile);
-      if (!files.length || typing) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      const sources = [];
-      for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
-      insertImages(api, sources, viewCenter(api), "center");
-    };
-    document.addEventListener("copy", onCopy);
-    window.addEventListener("paste", onPaste, true);
-    return () => {
-      document.removeEventListener("copy", onCopy);
-      window.removeEventListener("paste", onPaste, true);
-    };
-  }, [api]);
-
-  // 시작: 실행 인자로 받은 파일 → 저장 안 된 자동 저장본 → 마지막에 열었던 파일 순서로 연다
-  const started = useRef(false);
-  useEffect(() => {
-    if (!api || started.current) return;
-    started.current = true;
-    (async () => {
-      try {
-        const pending = await chh?.pendingOpen();
-        const saved = await store.read().catch(() => null);
-        const unsaved = !!saved?.meta?.dirty && !!saved.content;
-        if (pending) {
-          const res = await chh.readFile(pending);
-          if (unsaved) {
-            // 지난번 저장 안 한 작업을 잃지 않도록 먼저 복사본을 남긴다
-            await store.archive();
-            api.setToast({ message: "지난번 저장하지 않은 작업은 자동 저장 백업 폴더에 보관했습니다." });
-          }
-          if (res?.content != null) await openContent(res.path, res.content);
-          else api.setToast({ message: `파일을 읽지 못했습니다: ${res?.error || ""}` });
-        } else if (unsaved) {
-          const path = saved.meta.fileExists ? saved.meta.filePath : null;
-          await openContent(path, saved.content, { restoredDirty: true });
-        } else if (saved?.meta?.filePath && saved.meta.fileExists) {
-          const res = await chh.readFile(saved.meta.filePath);
-          if (res?.content != null) await openContent(res.path, res.content);
-        }
-      } finally {
-        if (savedSig.current === null && !dirtyRef.current) {
-          markClean(sceneSignature(api.getSceneElementsIncludingDeleted(), initialBg));
-        }
-        autosaveReady.current = true;
-      }
-    })();
-  }, [api, openContent, markClean, initialBg]);
-
-  // 이미 실행 중일 때 더블클릭한 보드 파일 열기
-  useEffect(() => {
-    if (!api || !chh) return;
-    return chh.onOpenPath(openPath);
-  }, [api, openPath]);
+  useHotkeys({
+    api,
+    modalOpen: shortcutOpen || helpOpen, // 우리 대화상자가 떠 있는 동안 단축키를 쉬게 한다
+    uiHidden,
+    setUiHidden,
+    colorPickerOpen: pickerOpen || !!elPicker,
+    closeColorPickers: () => {
+      setPickerOpen(false);
+      setElPicker(null);
+    },
+    openHelp: () => setHelpOpen(true),
+    startNote,
+    noteAtCenter,
+    groupSelection,
+    openSearch,
+    newBoard,
+    openDialog,
+    save,
+  });
 
   // 자동 점검용: 패키징되지 않은 실행에서 CHH_TEST 를 줬을 때만 노출한다
   useEffect(() => {
     if (chh?.testMode) window.__chhApi = api;
   }, [api]);
-
-  // 클릭 통과 상태 / 캡처 단축키 등록 결과
-  useEffect(() => {
-    if (!api || !chh) return;
-    const off = chh.onClickThrough((on) => {
-      setClickThrough(on);
-      if (!on) api.setToast({ message: "클릭 통과를 해제했습니다.", duration: 1500 });
-    });
-    chh.getCaptureShortcut().then(({ accel, ok }) => {
-      setCaptureKey(accel);
-      if (!ok) {
-        api.setToast({
-          message: `캡처 단축키 ${formatAccelerator(accel)}를 등록하지 못했습니다. 다른 프로그램이 쓰고 있을 수 있어요. 메뉴에서 바꿀 수 있습니다.`,
-        });
-      }
-    });
-    return off;
-  }, [api]);
-
-  const toggleClickThrough = useCallback(async () => {
-    const api = apiRef.current;
-    const next = !clickThrough;
-    const ok = await chh.setClickThrough(next);
-    if (!ok) {
-      api?.setToast({ message: "해제 단축키(Ctrl+Shift+L)를 등록하지 못해 클릭 통과를 켜지 않았습니다." });
-    } else if (next) {
-      api?.setToast({ message: "클릭 통과 켜짐: Ctrl+Shift+L로 해제합니다.", duration: 4000 });
-    }
-  }, [clickThrough]);
-
-  // 화면 캡처 결과를 현재 화면 가운데에 이미지로 붙인다.
-  useEffect(() => {
-    if (!api || !chh) return;
-    const offCapture = chh.onCaptureResult(({ dataURL, scale }) => {
-      const img = new Image();
-      img.onload = () => {
-        const s = api.getAppState();
-        const w = img.naturalWidth / (scale || 1);
-        const h = img.naturalHeight / (scale || 1);
-        const fileId = `cap_${Date.now()}`;
-        api.addFiles([{ id: fileId, dataURL, mimeType: "image/png", created: Date.now() }]);
-        const cx = -s.scrollX + s.width / 2 / s.zoom.value;
-        const cy = -s.scrollY + s.height / 2 / s.zoom.value;
-        const [el] = convertToExcalidrawElements([
-          { type: "image", fileId, status: "saved", x: cx - w / 2, y: cy - h / 2, width: w, height: h },
-        ]);
-        api.updateScene({
-          elements: [...api.getSceneElements(), el],
-          appState: { selectedElementIds: { [el.id]: true } },
-        });
-      };
-      img.src = dataURL;
-    });
-    const offToast = chh.onToast((message) => api.setToast({ message }));
-    return () => {
-      offCapture();
-      offToast();
-    };
-  }, [api]);
-
-  // 단축키: Esc = 메인 메뉴 열기/닫기, Ctrl+N/O/S, Ctrl+Shift+S
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      const api = apiRef.current;
-      if (!api || modalRef.current) return;
-
-      const typingNow =
-        e.target instanceof HTMLElement &&
-        (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
-
-      // F1: CHH 도움말
-      if (e.key === "F1" && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        setHelpOpen(true);
-        return;
-      }
-
-      // Tab: 모든 UI 켜기/끄기
-      if (e.key === "Tab" && !e.ctrlKey && !e.altKey && !e.metaKey && !typingNow) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (!uiHiddenRef.current) api.setToast({ message: "Tab 키로 UI를 다시 표시합니다", duration: 1500 });
-        setUiHidden((v) => !v);
-        return;
-      }
-
-      if (e.key === "Escape") {
-        if (uiHiddenRef.current) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          setUiHidden(false);
-          return;
-        }
-        if (pickerOpenRef.current || elPickerRef.current) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          setPickerOpen(false);
-          setElPicker(null);
-          return;
-        }
-        const s = api.getAppState();
-        const t = e.target;
-        const typing =
-          t instanceof HTMLElement &&
-          (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-        // 글자 입력, 대화상자, 그리던 중인 도형, 색상 팝업 등은 Excalidraw 기본 Esc 동작에 맡긴다.
-        if (
-          typing ||
-          s.openDialog ||
-          s.openPopup ||
-          s.openSidebar ||
-          s.editingTextElement ||
-          s.newElement ||
-          s.multiElement ||
-          s.openMenu === "shape"
-        ) {
-          return;
-        }
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        api.updateScene({ appState: { openMenu: s.openMenu === "canvas" ? null : "canvas" } });
-        return;
-      }
-
-      // 메모(N), 묶기(Alt+G), 검색(Ctrl+F). 한글 입력 상태에서도 되도록 물리 키로 본다.
-      if (!typingNow && !e.repeat) {
-        const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
-        let run = null;
-        if (plain && e.code === "KeyN") {
-          const p = pointerRef.current;
-          run = () => (p ? startNote(viewportCoordsToSceneCoords(p, api.getAppState())) : noteAtCenter());
-        } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === "KeyG") run = groupSelection;
-        else if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === "KeyF") run = openSearch;
-        if (run) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          run();
-          return;
-        }
-      }
-
-      if (!chh || !(e.ctrlKey || e.metaKey) || e.altKey) return;
-      const key = e.key.toLowerCase();
-      let action = null;
-      if (key === "n" && !e.shiftKey) action = newBoard;
-      else if (key === "o" && !e.shiftKey) action = openDialog;
-      else if (key === "s") action = () => save(e.shiftKey);
-      if (!action) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      action();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [newBoard, openDialog, save, startNote, noteAtCenter, groupSelection, openSearch]);
-
-  // 우클릭 드래그로 창 이동 (PureRef 방식). 거의 안 움직였으면 일반 우클릭 메뉴가 뜬다.
-  useEffect(() => {
-    if (!chh) return;
-    let origin = null;
-    let moved = false;
-    const onDown = (e) => {
-      if (e.button !== 2) return;
-      origin = { x: e.screenX, y: e.screenY };
-      moved = false;
-      chh.dragStart();
-    };
-    const onMove = (e) => {
-      if (!origin || moved) return;
-      if (Math.hypot(e.screenX - origin.x, e.screenY - origin.y) > 4) moved = true;
-    };
-    const end = () => {
-      if (!origin) return;
-      origin = null;
-      chh.dragStop();
-    };
-    const onUp = (e) => e.button === 2 && end();
-    const onContext = (e) => {
-      if (moved) {
-        e.preventDefault();
-        e.stopPropagation();
-        moved = false;
-      }
-    };
-    window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("pointermove", onMove, true);
-    window.addEventListener("pointerup", onUp, true);
-    window.addEventListener("mouseup", onUp, true);
-    window.addEventListener("blur", end);
-    window.addEventListener("contextmenu", onContext, true);
-    return () => {
-      window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("pointermove", onMove, true);
-      window.removeEventListener("pointerup", onUp, true);
-      window.removeEventListener("mouseup", onUp, true);
-      window.removeEventListener("blur", end);
-      window.removeEventListener("contextmenu", onContext, true);
-      end();
-    };
-  }, []);
-
-  // UI를 숨긴 상태에서 창 맨 위에 마우스를 올리면 제목 표시줄이 잠깐 나타난다 (PureRef 방식)
-  const [tbPeek, setTbPeek] = useState(false);
-  useEffect(() => {
-    if (!chh || !uiHidden) {
-      setTbPeek(false);
-      return;
-    }
-    const onMove = (e) => {
-      setTbPeek((v) => (v ? e.clientY <= 44 : e.clientY <= 6));
-    };
-    const onLeave = () => setTbPeek(false);
-    window.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseleave", onLeave);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseleave", onLeave);
-    };
-  }, [uiHidden]);
 
   return (
     <div className={`app chh-dark${uiHidden ? " ui-hidden" : ""}${tbPeek ? " tb-peek" : ""}${clickThrough ? " click-through" : ""}`}>

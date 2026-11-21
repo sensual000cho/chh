@@ -370,7 +370,7 @@ async function main() {
       await window.chh.testCopy();
       await wait(900);
       const clip = await window.chh.testClipboardImage();
-      const keptText = clip.text.includes("excalidraw/clipboard");
+      const keptText = clip.text === "";
       await wait(3000); // 이 사이에 바깥에서 Windows 클립보드를 조회한다
       hoverCanvas();
       await window.chh.testPaste(null);
@@ -380,7 +380,7 @@ async function main() {
   });
   clearTimeout(clipTimer);
   check("다른 프로그램에서 클립보드 이미지가 보인다", /^\d+x\d+$/.test(externalClip), externalClip);
-  check("복사 후에도 보드 안 붙여넣기용 글자가 남는다", r.result?.keptText === true);
+  check("복사하면 클립보드에 글자 없이 이미지만 남는다", r.result?.keptText === true);
   check("복사한 이미지를 보드에 붙여넣으면 요소 그대로 들어온다", r.result?.n === 2, String(r.result?.n));
   check("예전 픽셀판은 일반 이미지로 남는다", r.result?.kept === true, JSON.stringify(r.result));
   }

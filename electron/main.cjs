@@ -479,15 +479,27 @@ ipcMain.handle("file:export-images", async (_e, images) => {
 
 // 복사한 이미지 하나를 OS 클립보드에 비트맵으로도 넣는다.
 // Excalidraw 는 요소 JSON(텍스트)만 복사하므로 PureRef 등 외부 앱은 이미지로 인식하지 못한다.
-// 텍스트(JSON)는 그대로 두어 앱 안에서의 붙여넣기(크기·위치 유지)는 유지한다.
+// 다른 앱에 붙여넣으면 요소 JSON 글자까지 같이 들어가므로 클립보드에는 이미지만 넣고,
+// JSON 은 여기 보관해 두었다가 앱 안에서 같은 이미지를 붙여넣을 때 돌려준다(크기·위치·링크 유지).
+let internalClip = null; // { json, hash }
+const clipImageHash = () => {
+  const img = clipboard.readImage();
+  if (img.isEmpty()) return null;
+  const { width, height } = img.getSize();
+  return `${width}x${height}:` + require("crypto").createHash("sha1").update(img.toBitmap()).digest("hex");
+};
 ipcMain.handle("clipboard:add-image", async (_e, pngDataURL) => {
   const image = nativeImage.createFromDataURL(pngDataURL || "");
   if (image.isEmpty()) return false;
   const text = await clipboard.readText();
-  const items = { "image/png": new Blob([image.toPNG()], { type: "image/png" }) };
-  if (text) items["text/plain"] = text;
-  await clipboard.write([new ClipboardItem(items)]);
+  await clipboard.write([new ClipboardItem({ "image/png": new Blob([image.toPNG()], { type: "image/png" }) })]);
+  internalClip = text?.includes("excalidraw/clipboard") ? { json: text, hash: clipImageHash() } : null;
   return true;
+});
+// 지금 클립보드의 이미지가 앱에서 복사한 그것이면 보관해 둔 요소 JSON 을 돌려준다
+ipcMain.handle("clipboard:internal", () => {
+  if (!internalClip?.hash) return null;
+  return clipImageHash() === internalClip.hash ? internalClip.json : null;
 });
 
 // 웹에서 끌어온 이미지 URL을 받아오기 (렌더러에서는 CORS로 막힐 수 있음)
