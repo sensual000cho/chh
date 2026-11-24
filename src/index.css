@@ -224,6 +224,55 @@ body,
 .app-body:has(.excalidraw--mobile) .zoom-badge { display: block; }
 .ui-hidden .zoom-badge { display: none !important; }
 
+/* ---- 좁은 창: 메뉴 버튼을 아래쪽 바에서 오른쪽 도구 묶음(라이브러리·잠금·손) 밑으로 옮긴다 ---- */
+@supports (anchor-name: --chh-tools) {
+  .app-body .excalidraw .mobile-misc-tools-container { anchor-name: --chh-tools; }
+  .app-body .excalidraw .App-toolbar-content > .main-menu-trigger {
+    anchor-name: --chh-menu;
+    position: fixed;
+    position-anchor: --chh-tools;
+    /* 뒤쪽 값은 보기 모드처럼 도구 묶음이 없을 때의 위치 */
+    top: calc(anchor(bottom, 108px) + 8px);
+    right: anchor(right, 0px);
+    z-index: -1; /* 속성 패널이 열리면 도구 묶음처럼 그 뒤로 간다 */
+    width: 37px;
+    height: 36px;
+    border: 1px solid var(--sidebar-border-color);
+    border-right: 0;
+    border-radius: var(--border-radius-lg) 0 0 var(--border-radius-lg);
+    box-shadow: none;
+    background-color: var(--island-bg-color);
+  }
+  .app-body .excalidraw .App-toolbar-content > .main-menu-trigger:hover { background-color: var(--color-surface-high); }
+  /* 메뉴는 버튼을 가리지 않게 그 왼쪽에 연다 */
+  .app-body .excalidraw .App-toolbar-content > .dropdown-menu--mobile {
+    position: fixed;
+    z-index: 1; /* 아래쪽 바의 실행 취소 버튼 위 */
+    top: 116px;
+    bottom: auto;
+    left: auto;
+    right: calc(anchor(--chh-menu left, 37px) + 8px);
+    width: min(320px, calc(100vw - 61px));
+    margin-top: 0;
+  }
+  .app-body .excalidraw .App-toolbar-content > .dropdown-menu--mobile .dropdown-menu-container {
+    max-height: calc(100vh - 130px);
+  }
+  /* 메뉴 버튼이 빠진 자리: 실행 취소·다시 실행은 오른쪽 끝에 둔다 */
+  .app-body .excalidraw .App-toolbar-content > div:last-child:not(.dropdown-menu) { margin-left: auto; }
+  .app-body:has(.App-toolbar-content > .dropdown-menu--mobile) .zoom-badge { display: none; }
+}
+/* 창이 낮으면 도구 묶음 밑에 자리가 없으므로 그 왼쪽에 둔다 */
+@media (max-height: 340px) {
+  .app-body .excalidraw .App-toolbar-content > .main-menu-trigger {
+    top: anchor(top, 116px);
+    right: calc(anchor(left, 0px) + 8px);
+    border-right: 1px solid var(--sidebar-border-color);
+    border-radius: var(--border-radius-lg);
+  }
+  .app-body .excalidraw .App-toolbar-content > .dropdown-menu--mobile { width: min(320px, calc(100vw - 106px)); }
+}
+
 /* ---- 작은 대화상자 ---- */
 .shortcut-now {
   margin-bottom: 12px;

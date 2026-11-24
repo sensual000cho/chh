@@ -348,7 +348,11 @@ export default function App() {
                   if (menu) {
                     const m = menu.getBoundingClientRect();
                     const r = row.getBoundingClientRect();
-                    setPickerPos({ left: m.right + 4, top: Math.max(8, Math.min(r.top, window.innerHeight - 330)) });
+                    // 오른쪽에 자리가 없으면(좁은 창) 메뉴 왼쪽에, 거기도 없으면 화면 안쪽에 연다
+                    const W = 258; // 패널 너비
+                    const fits = m.right + 4 + W <= window.innerWidth;
+                    const left = fits ? m.right + 4 : Math.max(8, m.left - 4 - W);
+                    setPickerPos({ left, top: Math.max(8, Math.min(r.top, window.innerHeight - 330)) });
                   }
                   setPickerOpen((v) => !v);
                 }}
