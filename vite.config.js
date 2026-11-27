@@ -47,6 +47,27 @@ const PATCHES = [
     /(case"embeddable":\{)(?=if\([\w$]+\.generateElementShape\(([\w$]+),([\w$]+)\),\3\.isExporting\))/,
     "$1if(!$3.isExporting&&globalThis.__chhLive?.has($2.id))break;",
   ],
+  // 묶음(프레임) 테두리는 원래 늘 같은 회색이다. 묶음에 고른 선 색(customData.chhBorder, groupColor.js)이 있으면 그 색으로 그린다.
+  [
+    "묶음 테두리 색(개발판)",
+    /(context\.fillStyle = "rgba\(0, 0, 200, 0\.04\)";\s*context\.lineWidth = FRAME_STYLE\.strokeWidth \/ appState\.zoom\.value;\s*context\.strokeStyle = )FRAME_STYLE\.strokeColor;/,
+    "$1element.customData?.chhBorder || FRAME_STYLE.strokeColor;",
+  ],
+  [
+    "묶음 테두리 색(배포판)",
+    /(\.translate\(([\w$]+)\.x\+[\w$]+\.scrollX,[^)]*\),[\w$]+\.fillStyle="rgba\(0, 0, 200, 0\.04\)",[\w$]+\.lineWidth=([\w$]+)\.strokeWidth\/[\w$]+\.zoom\.value,[\w$]+\.strokeStyle=)\3\.strokeColor/,
+    "$1$2.customData?.chhBorder||$3.strokeColor",
+  ],
+  [
+    "SVG 묶음 테두리 색(개발판)",
+    /(rect\.setAttribute\("fill", "none"\);\s*rect\.setAttribute\("stroke", )FRAME_STYLE\.strokeColor\)/,
+    "$1element.customData?.chhBorder || FRAME_STYLE.strokeColor)",
+  ],
+  [
+    "SVG 묶음 테두리 색(배포판)",
+    /(\.setAttribute\("width",`\$\{([\w$]+)\.width\}px`\)[^;]{0,300}?\.setAttribute\("fill","none"\),[\w$]+\.setAttribute\("stroke",)([\w$]+)\.strokeColor\)/,
+    "$1$2.customData?.chhBorder||$3.strokeColor)",
+  ],
 ];
 
 function excalidrawPatch() {

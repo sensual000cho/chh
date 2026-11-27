@@ -1,11 +1,11 @@
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
-import { COLOR_KEY, CURRENT_KEY, isColorTarget } from "./groupColor.js";
+import { COLOR_KEY, CURRENT_KEY, colorChange, colorOf, isColorTarget } from "./groupColor.js";
 
 // 묶음을 선택하면 Excalidraw 속성 패널에는 색 칸이 없다.
 // 그래서 다른 요소를 골랐을 때와 같은 모양의 "선 색상 / 배경색" 줄을 패널 맨 위에 끼워 넣는다.
-// 빠른 색을 누르면 묶음 안의 항목 색이 한꺼번에 바뀌고, 오른쪽 큰 칸(active-color)을 누르면
+// 빠른 색을 누르면 묶음 안의 항목 색(선 색이면 묶음 테두리도)이 한꺼번에 바뀌고, 오른쪽 큰 칸(active-color)을 누르면
 // App 이 다른 요소와 똑같이 우리 색 선택기(ElementColorPicker)를 연다.
 const PICKS = {
   stroke: ["#1e1e1e", "#e03131", "#2f9e44", "#1971c2", "#f08c00"],
@@ -20,7 +20,7 @@ function paint(api, type, color) {
   api.updateScene({
     elements: api
       .getSceneElementsIncludingDeleted()
-      .map((el) => (isColorTarget(el, ids, key) && el[key] !== color ? newElementWith(el, { [key]: color }) : el)),
+      .map((el) => (isColorTarget(el, ids, key) && colorOf(el, key) !== color ? newElementWith(el, colorChange(el, key, color)) : el)),
     appState: { [CURRENT_KEY[type]]: color },
     captureUpdate: CaptureUpdateAction.IMMEDIATELY,
   });

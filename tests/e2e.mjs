@@ -567,6 +567,7 @@ async function main() {
         note: byId(note.id) && [byId(note.id).strokeColor, byId(note.id).backgroundColor],
         text: byId(text.id)?.strokeColor,
         image: images()[0].strokeColor,
+        border: byId(frame.id)?.customData?.chhBorder,
       };
       // 큰 색 칸은 다른 요소처럼 우리 색 선택기를 연다
       document.querySelector(".group-color-rows .active-color")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
@@ -597,8 +598,8 @@ async function main() {
   check("묶음을 선택하면 선 색상·배경색 줄이 보인다", r.result?.rows?.join() === "선 색상,배경색", JSON.stringify(r.result?.rows));
   const p = r.result?.painted;
   check(
-    "묶음 색을 고르면 안의 항목 색이 한꺼번에 바뀐다",
-    p?.note?.[0] === "#e03131" && p?.note?.[1] === "#b2f2bb" && p?.text === "#e03131" && p?.image === "#e03131",
+    "묶음 색을 고르면 안의 항목과 묶음 테두리 색이 한꺼번에 바뀐다",
+    p?.note?.[0] === "#e03131" && p?.note?.[1] === "#b2f2bb" && p?.text === "#e03131" && p?.image === "#e03131" && p?.border === "#e03131",
     JSON.stringify(p),
   );
   check("묶음의 큰 색 칸은 색 선택기를 연다", r.result?.pickerOpened === true);

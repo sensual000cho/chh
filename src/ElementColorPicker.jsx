@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { CaptureUpdateAction, newElementWith } from "@excalidraw/excalidraw";
 import ColorPicker from "./ColorPicker.jsx";
-import { COLOR_KEY as KEY, CURRENT_KEY as CURRENT, isColorTarget, readColor } from "./groupColor.js";
+import { COLOR_KEY as KEY, CURRENT_KEY as CURRENT, colorChange, colorOf, isColorTarget, readColor } from "./groupColor.js";
 
 // Excalidraw 속성 패널의 선 색상 / 배경색 버튼을 누르면 기본 팝업 대신 이 선택기를 띄운다.
-// 묶음을 선택했으면 묶음 안의 항목 색을 함께 바꾼다.
+// 묶음을 선택했으면 묶음 안의 항목 색(선 색이면 묶음 테두리도)을 함께 바꾼다.
 
 // 투명 배경이나 #rrggbbaa 같은 색은 앞 6자리만 쓴다
 function parse(c) {
@@ -26,11 +26,11 @@ export default function ElementColorPicker({ api, target }) {
     let touched = false;
     const elements = api.getSceneElementsIncludingDeleted().map((el) => {
       if (!isColorTarget(el, ids, key)) return el;
-      if (!original.current.has(el.id)) original.current.set(el.id, el[key]);
+      if (!original.current.has(el.id)) original.current.set(el.id, colorOf(el, key));
       const c = typeof color === "function" ? color(el.id) : color;
-      if (c === undefined || el[key] === c) return el;
+      if (c === undefined || colorOf(el, key) === c) return el;
       touched = true;
-      return newElementWith(el, { [key]: c });
+      return newElementWith(el, colorChange(el, key, c));
     });
     api.updateScene({
       ...(touched && { elements }),
