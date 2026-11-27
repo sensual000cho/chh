@@ -47,7 +47,7 @@ export default function HelpDialog({ desktop, captureKey, onShowEditorHelp, onCl
       ]
     : [
         row("자동 저장", null, "브라우저에 자동"),
-        row("파일로 저장", null, "메인 메뉴 → 내보내기"),
+        row("파일로 저장", null, "메인 메뉴 → 다른 이름으로 저장"),
       ];
 
   const collect = [
