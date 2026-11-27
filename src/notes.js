@@ -1,6 +1,7 @@
 // 포스트잇 메모와 묶음(프레임) 만들기
 import { CaptureUpdateAction, convertToExcalidrawElements, newElementWith } from "@excalidraw/excalidraw";
 import { frameAt, frameBox } from "./sceneGeom.js";
+import { selectedFramesOnly } from "./groupColor.js";
 
 const NOTE_WIDTH = 280;
 const NOTE_HEIGHT = 160;
@@ -84,6 +85,27 @@ export function wrapInGroup(api) {
   });
   pressEnter(); // 바로 이름을 쓸 수 있게 한다
   return picked.length;
+}
+
+// 선택이 묶음뿐이면 묶음을 푼다: 안의 항목은 그대로 두고 상자만 없앤다. 꺼낸 항목 수를 돌려주고, 묶음이 아니면 -1.
+export function unwrapGroup(api) {
+  const all = api.getSceneElementsIncludingDeleted();
+  const frames = selectedFramesOnly(all, api.getAppState().selectedElementIds);
+  if (!frames.length) return -1;
+  const ids = new Set(frames.map((f) => f.id));
+  const freed = {};
+  const next = all.map((e) => {
+    if (ids.has(e.id)) return newElementWith(e, { isDeleted: true });
+    if (!e.frameId || !ids.has(e.frameId)) return e;
+    if (!e.isDeleted && !e.containerId) freed[e.id] = true; // 도형 안 글자는 도형과 함께 선택된다
+    return newElementWith(e, { frameId: null });
+  });
+  api.updateScene({
+    elements: next,
+    appState: { selectedElementIds: freed },
+    captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+  });
+  return Object.keys(freed).length;
 }
 
 // 묶음 안의 요소를 움직인 뒤 묶음이 그 요소들을 다시 감싸도록 크기를 맞춘다 (벗어난 부분은 잘려 보이므로)

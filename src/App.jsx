@@ -9,7 +9,9 @@ import ShortcutDialog from "./ShortcutDialog.jsx";
 import HelpDialog from "./HelpDialog.jsx";
 import ZoomBadge from "./ZoomBadge.jsx";
 import { arrangeItems } from "./arrange.js";
-import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
+import { createNote, finishNote, fitFrames, unwrapGroup, wrapInGroup } from "./notes.js";
+import GroupColorRows from "./GroupColorRows.jsx";
+import { readColor, selectedFramesOnly } from "./groupColor.js";
 import { formatAccelerator } from "./accelerator.js";
 import MediaLayer from "./MediaLayer.jsx";
 import { collectImages, viewCenter } from "./images.js";
@@ -58,6 +60,7 @@ export default function App() {
   const [bg, setBg] = useState(initialBg); // 화면에 보이는 캔버스 배경색
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerPos, setPickerPos] = useState(null);
+  const [groupSel, setGroupSel] = useState(null); // 묶음만 선택했을 때 { selKey, stroke, bg }
   const [elPicker, setElPicker] = useState(null); // 요소 선/배경 색 선택기 { type, left, top }
   const elPickerRef = useRef(null);
   elPickerRef.current = elPicker;
@@ -134,6 +137,18 @@ export default function App() {
         appliedStored.current = stored;
         setBg(stored);
       }
+      // 묶음만 선택했으면 속성 패널에 색 줄을 넣는다 (안의 항목 색을 보여준다)
+      const frames = selectedFramesOnly(els, appState.selectedElementIds);
+      const next = frames.length
+        ? {
+            selKey: frames.map((f) => f.id).join(","),
+            stroke: readColor(els, appState, "stroke"),
+            bg: readColor(els, appState, "bg"),
+          }
+        : null;
+      setGroupSel((cur) =>
+        cur?.selKey === next?.selKey && cur?.stroke === next?.stroke && cur?.bg === next?.bg ? cur : next,
+      );
       trackChange(els, stored);
     },
     [trackChange],
@@ -232,7 +247,10 @@ export default function App() {
   const groupSelection = useCallback(() => {
     const api = apiRef.current;
     if (!api) return;
-    if (!wrapInGroup(api)) api.setToast({ message: "묶을 항목을 먼저 선택하세요.", duration: 2000 });
+    // 묶음만 선택했으면 풀고, 아니면 선택한 항목을 묶는다
+    const freed = unwrapGroup(api);
+    if (freed >= 0) api.setToast({ message: "묶음을 풀었습니다. (Ctrl+Z로 되돌리기)", duration: 2000 });
+    else if (!wrapInGroup(api)) api.setToast({ message: "묶을 항목을 먼저 선택하세요.", duration: 2000 });
   }, []);
 
   // 보드 안 검색: 메모와 글자에서 찾는다
@@ -324,7 +342,7 @@ export default function App() {
             새 메모
           </MainMenu.Item>
           <MainMenu.Item onSelect={groupSelection} shortcut="Alt+G">
-            선택 항목 묶기
+            선택 항목 묶기 / 풀기
           </MainMenu.Item>
           <MainMenu.Item onSelect={arrangeImages}>이미지 자동 정렬</MainMenu.Item>
           <MainMenu.Item onSelect={openSearch} shortcut="Ctrl+F">
@@ -448,6 +466,7 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      {groupSel && api && <GroupColorRows api={api} {...groupSel} />}
       {elPicker && api && <ElementColorPicker key={elPicker.type} api={api} target={elPicker} />}
       {pickerOpen && (
         <div className="bgpanel" style={pickerPos || undefined}>

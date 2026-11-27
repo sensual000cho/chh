@@ -62,7 +62,7 @@ export default function HelpDialog({ desktop, captureKey, onShowEditorHelp, onCl
   ];
 
   const organize = [
-    row("선택 항목 묶기", [["Alt", "G"]]),
+    row("선택 항목 묶기 / 묶음 풀기", [["Alt", "G"]]),
     row("묶음 이름 바꾸기", [["Enter"]]),
     row("이미지 자동 정렬", null, desktop ? "제목 표시줄 · 메인 메뉴" : "메인 메뉴"),
     row("보드에서 찾기", [["Ctrl", "F"]]),

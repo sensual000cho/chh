@@ -553,12 +553,61 @@ async function main() {
       await wait(300);
       const note = api.getSceneElements().find((e) => e.type === "rectangle");
       const text = api.getSceneElements().find((e) => e.type === "text" && e.containerId === note?.id);
-      return { renamed, inside, spread, noteInFrame: note?.frameId === frame.id, textInFrame: text?.frameId === frame.id, frameId: frame.id };`,
+      const noteInFrame = note?.frameId === frame.id, textInFrame = text?.frameId === frame.id;
+      // 묶음 색: 묶음을 선택하면 속성 패널에 색 줄이 생기고, 고른 색이 안의 항목에 한꺼번에 들어간다
+      api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
+      await wait(400);
+      const rows = [...document.querySelectorAll(".App-menu__left .group-color-rows h3")].map((h) => h.textContent);
+      document.querySelector('.group-color-rows [title="#e03131"]')?.click();
+      await wait(200);
+      document.querySelector('.group-color-rows [title="#b2f2bb"]')?.click();
+      await wait(200);
+      const byId = (id) => api.getSceneElements().find((e) => e.id === id);
+      const painted = {
+        note: byId(note.id) && [byId(note.id).strokeColor, byId(note.id).backgroundColor],
+        text: byId(text.id)?.strokeColor,
+        image: images()[0].strokeColor,
+      };
+      // 큰 색 칸은 다른 요소처럼 우리 색 선택기를 연다
+      document.querySelector(".group-color-rows .active-color")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      await wait(300);
+      const pickerOpened = !!document.querySelector(".elpanel");
+      document.querySelector(".excalidraw canvas.interactive").dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+      await wait(200);
+      // 묶음을 선택하고 Alt+G 를 다시 누르면 상자만 없어지고 안의 항목은 남는다
+      api.updateScene({ appState: { selectedElementIds: { [frame.id]: true } } });
+      await wait(100);
+      const countBefore = api.getSceneElements().filter((e) => e.type !== "frame").length;
+      key("g", { code: "KeyG", altKey: true });
+      await wait(400);
+      const after = api.getSceneElements();
+      const ungroup = {
+        frames: after.filter((e) => e.type === "frame").length,
+        kept: after.length === countBefore,
+        free: after.every((e) => !e.frameId),
+        selected: Object.keys(api.getAppState().selectedElementIds).length,
+        rowsGone: !document.querySelector(".group-color-rows"),
+      };
+      return { renamed, inside, spread, noteInFrame, textInFrame, frameId: frame.id, rows, painted, pickerOpened, ungroup };`,
   });
   server3.close();
   check("묶음 이름을 바꿀 수 있다", r.result?.renamed === "1차 시안", JSON.stringify(r.result));
   check("묶음 안 이미지를 정렬하면 묶음이 함께 맞춰진다", r.result?.inside === true && r.result?.spread === 3);
   check("묶음 안 빈 곳의 메모는 묶음에 들어간다", r.result?.noteInFrame === true && r.result?.textInFrame === true);
+  check("묶음을 선택하면 선 색상·배경색 줄이 보인다", r.result?.rows?.join() === "선 색상,배경색", JSON.stringify(r.result?.rows));
+  const p = r.result?.painted;
+  check(
+    "묶음 색을 고르면 안의 항목 색이 한꺼번에 바뀐다",
+    p?.note?.[0] === "#e03131" && p?.note?.[1] === "#b2f2bb" && p?.text === "#e03131" && p?.image === "#e03131",
+    JSON.stringify(p),
+  );
+  check("묶음의 큰 색 칸은 색 선택기를 연다", r.result?.pickerOpened === true);
+  const u = r.result?.ungroup;
+  check(
+    "묶음을 선택하고 Alt+G 를 누르면 묶음만 풀린다",
+    u?.frames === 0 && u?.kept && u?.free && u?.selected === 4 && u?.rowsGone,
+    JSON.stringify(u),
+  );
 
   console.log("\n[8-5] 웹 이미지 끌어다 놓기");
   const seen = [];
