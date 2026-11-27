@@ -1,7 +1,10 @@
-// 파일/웹 이미지 끌어다 놓기 (.chh, .excalidraw 파일은 보드로 열기)
+// 파일/웹 이미지·영상 끌어다 놓기 (.chh, .excalidraw 파일은 보드로 열기)
 import { useEffect } from "react";
 import { viewportCoordsToSceneCoords } from "@excalidraw/excalidraw";
-import { fileMime, insertImages, pickDropped, readAsDataURL } from "../images.js";
+import { insertImages, pickDropped } from "../images.js";
+import { insertFiles, insertVideoUrl } from "../insertMedia.js";
+import { isVideoUrl } from "../videoLinks.js";
+import { isMediaFile } from "../videos.js";
 import { chh } from "../chh.js";
 
 export function useDropImport(api, targetRef, openPath) {
@@ -27,30 +30,36 @@ export function useDropImport(api, targetRef, openPath) {
         if (p) openPath(p);
         return;
       }
-      const { files, web } = pickDropped(dt);
+      const { files: all, web } = pickDropped(dt);
+      const files = all.filter(isMediaFile);
       if (!files.length && !web) return; // 그 밖의 드롭은 Excalidraw 기본 처리
       e.preventDefault();
       e.stopPropagation();
       const at = viewportCoordsToSceneCoords({ clientX: e.clientX, clientY: e.clientY }, api.getAppState());
-      const sources = [];
-      for (const f of files) {
-        // 여러 파일이면 어느 파일의 주소인지 알 수 없으므로 한 장일 때만 출처를 붙인다
-        sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f), link: files.length === 1 ? web?.link : null });
-      }
-      if (!files.length && web) {
-        if (web.image.startsWith("data:")) sources.push({ dataURL: web.image, link: web.link });
-        else if (chh) {
-          const r = await chh.fetchImage(web.image, web.link);
-          if (r?.dataURL) sources.push({ dataURL: r.dataURL, link: web.link });
-          else api.setToast({ message: `이미지를 가져오지 못했습니다: ${r?.error || ""}` });
-        } else {
-          api.setToast({ message: "웹 버전에서는 웹 이미지를 끌어올 수 없습니다. 이미지를 저장한 뒤 넣어 주세요." });
-        }
-      }
-      if (web && sources.length === 1 && !sources[0].link) {
+      const noLink = () =>
         api.setToast({ message: "이 페이지는 원본 주소를 넘겨주지 않아 출처 없이 넣었습니다.", duration: 3000 });
+      if (files.length) {
+        await insertFiles(api, files, at, "corner", web?.link);
+        if (web && files.length === 1 && !web.link) noLink();
+        return;
       }
-      if (sources.length) insertImages(api, sources, at, "corner");
+      // 유튜브 주소나 영상 파일 주소는 재생할 수 있게 넣는다 (그림을 끌어온 경우에는 그림을 넣는다)
+      if (isVideoUrl(web.image)) {
+        await insertVideoUrl(api, web.image, at, "corner");
+        return;
+      }
+      let source = null;
+      if (web.image.startsWith("data:")) source = { dataURL: web.image, link: web.link };
+      else if (chh) {
+        const r = await chh.fetchImage(web.image, web.link);
+        if (r?.dataURL) source = { dataURL: r.dataURL, link: web.link };
+        else api.setToast({ message: `이미지를 가져오지 못했습니다: ${r?.error || ""}` });
+      } else {
+        api.setToast({ message: "웹 버전에서는 웹 이미지를 끌어올 수 없습니다. 이미지를 저장한 뒤 넣어 주세요." });
+      }
+      if (!source) return;
+      if (!source.link) noLink();
+      insertImages(api, [source], at, "corner");
     };
     el.addEventListener("dragover", onOver, true);
     el.addEventListener("drop", onDrop, true);

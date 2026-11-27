@@ -1,7 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Excalidraw 의 확대/축소 범위(10% ~ 3000%)와 방식은 설정으로 바꿀 수 없어서 번들을 읽을 때 코드를 바꾼다.
+// 설정으로 바꿀 수 없는 Excalidraw 동작(확대/축소 범위 10% ~ 3000% 등)은 번들을 읽을 때 코드를 바꾼다.
 // - 범위: 1% ~ 300% (레퍼런스 보드라 크게 확대할 일은 적고, 멀리서 내려다볼 일이 많다)
 // - 단계: 원래는 0.1(10%p)씩 더하고 빼서 10% 아래에선 한 번에 최소로 떨어진다.
 //         배율에 비례해 바뀌게(한 칸에 ZOOM_RATIO 배) 해서 낮은 배율에서도 조금씩 움직이게 한다.
@@ -35,12 +35,24 @@ const PATCHES = [
     /(\([\w$]+, ?)[\w$]+(, ?"floor"\), ?[\w$]+, ?[\w$]+\))/,
     `$1${MIN_ZOOM}$2`,
   ],
+  // 움직이는 GIF·영상을 캔버스 위에 얹는 동안(MediaLayer.jsx)에는 캔버스에 같은 그림을 그리지 않는다
+  // (투명한 부분으로 정지 그림이 비치지 않도록). 이미지로 내보낼 때는 그대로 그린다.
+  [
+    "움직이는 요소 건너뛰기(개발판)",
+    /(ShapeCache\.generateElementShape\((element), (renderConfig)\);\s*)(?=if \(renderConfig\.isExporting\))/,
+    "$1if (!$3.isExporting && globalThis.__chhLive?.has($2.id)) break;\n      ",
+  ],
+  [
+    "움직이는 요소 건너뛰기(배포판)",
+    /(case"embeddable":\{)(?=if\([\w$]+\.generateElementShape\(([\w$]+),([\w$]+)\),\3\.isExporting\))/,
+    "$1if(!$3.isExporting&&globalThis.__chhLive?.has($2.id))break;",
+  ],
 ];
 
-function excalidrawZoom() {
+function excalidrawPatch() {
   const applied = new Set();
   return {
-    name: "chh-excalidraw-zoom",
+    name: "chh-excalidraw-patch",
     transform(code, id) {
       if (!/[\\/]@excalidraw[\\/]excalidraw[\\/]dist[\\/]/.test(id)) return null;
       let next = code;
@@ -56,7 +68,7 @@ function excalidrawZoom() {
       const dev = applied.has("최소 배율(개발판)") || applied.has("최대 배율(개발판)");
       const need = PATCHES.map(([n]) => n).filter((n) => !n.includes(dev ? "배포판" : "개발판"));
       const missing = need.filter((n) => !applied.has(n));
-      if (applied.size && missing.length) this.error(`Excalidraw 배율 패치를 못 했습니다: ${missing.join(", ")}`);
+      if (applied.size && missing.length) this.error(`Excalidraw 패치를 못 했습니다: ${missing.join(", ")}`);
     },
   };
 }
@@ -64,8 +76,8 @@ function excalidrawZoom() {
 // Electron이 file:// 로 dist/index.html 을 열기 때문에 상대 경로로 빌드한다.
 export default defineConfig({
   base: "./",
-  plugins: [react(), excalidrawZoom()],
+  plugins: [react(), excalidrawPatch()],
   // 개발 서버는 의존성을 미리 묶어 두므로 그 단계에도 같은 처리를 건다
-  optimizeDeps: { rolldownOptions: { plugins: [excalidrawZoom()] } },
+  optimizeDeps: { rolldownOptions: { plugins: [excalidrawPatch()] } },
   server: { port: 5173, strictPort: true },
 });

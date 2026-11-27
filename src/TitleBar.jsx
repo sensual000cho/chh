@@ -103,7 +103,7 @@ export default function TitleBar({
         <Btn title="저장 (Ctrl+S)" onClick={onSave}>{icons.save}</Btn>
         <span className="tb-sep" />
         <Btn title={`화면 캡처 (${captureKey || "Ctrl+Shift+X"})`} onClick={onCapture} label="캡처">{icons.capture}</Btn>
-        <Btn title="이미지 가져오기 (파일 선택 · 끌어다 놓기 · 붙여넣기)" onClick={onImport} label="이미지">{icons.image}</Btn>
+        <Btn title="이미지 · 영상 가져오기 (파일 선택 · 끌어다 놓기 · 붙여넣기)" onClick={onImport} label="이미지">{icons.image}</Btn>
         <Btn title="새 메모 (N)" onClick={onNote} label="메모">{icons.note}</Btn>
         <span className="tb-extra">
           <Btn title="선택 항목 묶기 (Alt+G)" onClick={onGroup}>{icons.group}</Btn>

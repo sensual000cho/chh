@@ -53,8 +53,10 @@ export default function HelpDialog({ desktop, captureKey, onShowEditorHelp, onCl
   const collect = [
     desktop && row("화면 캡처", [capture]),
     desktop && row("캡처 취소", [["Esc"]]),
-    row("이미지 가져오기", [["Ctrl", "V"], ["끌어다 놓기"]]),
-    row("이미지 파일 고르기", null, desktop ? "제목 표시줄 · 메인 메뉴" : "메인 메뉴"),
+    row("이미지 · GIF · 영상 가져오기", [["Ctrl", "V"], ["끌어다 놓기"]]),
+    row("유튜브 · 비메오 · 영상 주소", [["Ctrl", "V"], ["끌어다 놓기"]]),
+    row("유튜브 카드 재생", null, "가운데를 클릭"),
+    row("파일 고르기", null, desktop ? "제목 표시줄 · 메인 메뉴" : "메인 메뉴"),
     row("메모", [["N"]]),
     row("웹 이미지 출처 링크", null, "자동"),
   ];

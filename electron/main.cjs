@@ -12,6 +12,7 @@ const {
   globalShortcut,
   nativeImage,
   net,
+  session,
   shell,
 } = require("electron");
 const path = require("path");
@@ -241,7 +242,28 @@ ipcMain.on("app:close-response", (_e, ok) => {
   if (ok) forceClose();
 });
 
+// ---------- 보드 안의 유튜브·비메오 ----------
+// 유튜브는 어디서 재생하는지(Referer) 알 수 없으면 오류 153 으로 막는다. 파일로 연 앱에는 Referer 가 없으므로
+// 유튜브 안내대로 앱 ID 를 주소처럼 적어 보낸다.
+const EMBED_REFERER = "https://com.chh.app/";
+const EMBED_URLS = ["https://www.youtube.com/*", "https://www.youtube-nocookie.com/*", "https://player.vimeo.com/*"];
+
+function setupEmbeds() {
+  const ses = session.defaultSession;
+  ses.webRequest.onBeforeSendHeaders({ urls: EMBED_URLS }, (details, done) => {
+    const headers = details.requestHeaders;
+    if (details.resourceType === "subFrame" && !headers.Referer) headers.Referer = EMBED_REFERER;
+    done({ requestHeaders: headers });
+  });
+  // 보드에 넣은 외부 페이지에는 전체 화면 말고는 아무 권한도 주지 않는다 (Electron 은 기본으로 모두 허락한다)
+  const isOurs = (url) => /^file:/.test(url || "") || (isDev && (url || "").startsWith("http://localhost:5173"));
+  ses.setPermissionRequestHandler((_wc, permission, done, details) =>
+    done(isOurs(details.requestingUrl) || permission === "fullscreen"),
+  );
+}
+
 app.whenReady().then(() => {
+  setupEmbeds();
   if (!isDev && !devEnv.CHH_SHOT) showSplash();
   createMainWindow();
   captureShortcutOk = registerCaptureShortcut(settings.captureShortcut || DEFAULT_CAPTURE_SHORTCUT);
@@ -327,6 +349,17 @@ if (devEnv.CHH_TEST) {
     if (!dbg.isAttached()) dbg.attach("1.3");
     return dbg.sendCommand(method, params);
   });
+  // 보드 안 외부 페이지(유튜브 등)의 글자와 영상 상태
+  ipcMain.handle("test:frames", () =>
+    Promise.all(
+      mainWindow.webContents.mainFrame.frames.map(async (f) => ({
+        url: f.url,
+        ...(await f.executeJavaScript(
+          "({ text: document.body.innerText.slice(0, 300), video: !!document.querySelector('video'), ready: document.querySelector('video')?.readyState })",
+        )),
+      })),
+    ),
+  );
   ipcMain.handle("test:copy", () => mainWindow.webContents.copy());
   ipcMain.handle("test:clipboard-image", async () => {
     const [item] = await clipboard.read();

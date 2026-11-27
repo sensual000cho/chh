@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("chh", {
   testMode: process.argv.includes("--chh-test"),
   testPaste: (text) => ipcRenderer.invoke("test:paste", text),
   testCdp: (method, params) => ipcRenderer.invoke("test:cdp", method, params),
+  testFrames: () => ipcRenderer.invoke("test:frames"),
   testCopy: () => ipcRenderer.invoke("test:copy"),
   testClipboardImage: () => ipcRenderer.invoke("test:clipboard-image"),
 });

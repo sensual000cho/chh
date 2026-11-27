@@ -7,6 +7,9 @@ import { arrangeItems } from "../src/arrange.js";
 import { eventToAccelerator, formatAccelerator } from "../src/accelerator.js";
 import { commonBounds, elementBounds, frameAt, frameBox } from "../src/sceneGeom.js";
 import { isHttpUrl, parseDroppedLinks } from "../src/links.js";
+import { fileUrl, isLocalPath, parseEmbedVideo, parseVideoFileUrl } from "../src/videoLinks.js";
+import { isAnimatedImage } from "../src/animated.js";
+import { cropBox, layoutMedia } from "../src/mediaScene.js";
 
 const require = createRequire(import.meta.url);
 const { atomicWrite, archiveFile, migrateUserData } = require("../electron/fsutil.cjs");
@@ -212,5 +215,77 @@ describe("migrateUserData", () => {
   it("예전 폴더가 없으면 아무것도 하지 않는다", () => {
     expect(migrateUserData(old(), cur())).toBe(false);
     expect(fs.existsSync(cur())).toBe(false);
+  });
+});
+
+describe("영상 주소", () => {
+  const yt = (u) => parseEmbedVideo(u)?.link;
+  it("유튜브의 여러 주소 모양을 하나로 맞춘다", () => {
+    const want = "https://www.youtube.com/watch?v=aqz-KE-bpKQ";
+    for (const u of [
+      "https://youtu.be/aqz-KE-bpKQ?si=abc",
+      "https://m.youtube.com/watch?app=desktop&v=aqz-KE-bpKQ",
+      "https://www.youtube.com/live/aqz-KE-bpKQ?feature=share",
+      "https://music.youtube.com/watch?v=aqz-KE-bpKQ&list=RDx",
+      " https://www.youtube.com/embed/aqz-KE-bpKQ ",
+    ])
+      expect(yt(u)).toBe(want);
+  });
+  it("시작 시각, 쇼츠, 재생 목록", () => {
+    expect(yt("https://youtu.be/aqz-KE-bpKQ?t=1m5s")).toMatch(/&t=65$/);
+    expect(yt("https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=90s")).toMatch(/&t=90$/);
+    const shorts = parseEmbedVideo("https://www.youtube.com/shorts/aqz-KE-bpKQ");
+    expect(shorts.height).toBeGreaterThan(shorts.width);
+    expect(yt("https://www.youtube.com/playlist?list=PL_a-1")).toBe("https://www.youtube.com/playlist?list=PL_a-1");
+  });
+  it("비메오와 영상이 아닌 주소", () => {
+    expect(yt("https://vimeo.com/channels/staffpicks/76979871")).toBe("https://vimeo.com/76979871");
+    for (const u of ["https://www.youtube.com/@name", "https://www.youtube.com/", "https://a.com/watch?v=aqz-KE-bpKQ", "글자", "https://notyoutube.com/watch?v=aqz-KE-bpKQ"])
+      expect(parseEmbedVideo(u)).toBeNull();
+  });
+  it("영상 파일 주소", () => {
+    expect(parseVideoFileUrl("https://a.com/b/c.MP4?x=1")).toBe("https://a.com/b/c.MP4?x=1");
+    expect(parseVideoFileUrl("https://i.imgur.com/abc.gifv")).toBe("https://i.imgur.com/abc.mp4");
+    expect(parseVideoFileUrl("https://a.com/page?file=c.mp4")).toBeNull();
+    expect(parseVideoFileUrl("file:///C:/a.mp4")).toBeNull();
+  });
+  it("원본 파일은 이 컴퓨터의 드라이브 경로만 받는다", () => {
+    expect(isLocalPath("C:\\영상\\a.mp4")).toBe(true);
+    for (const p of ["\\\\server\\a.mp4", "//server/a.mp4", "C:\\\\server\\a.mp4", "/a.mp4", "file:///c:/a", null, {}]) expect(isLocalPath(p)).toBe(false);
+    expect(fileUrl("C:\\a b\\#1.mp4")).toBe("file:///C:/a%20b/%231.mp4");
+  });
+});
+
+describe("움직이는 그림", () => {
+  const url = (mime, bytes) => `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+  it("GIF, 움직이는 WebP·PNG 를 알아본다", () => {
+    const webp = (flag) => url("image/webp", [...Buffer.from("RIFF\0\0\0\0WEBPVP8X\n\0\0\0"), flag, 0, 0, 0]);
+    expect(isAnimatedImage("image/gif", url("image/gif", [1]))).toBe(true);
+    expect(isAnimatedImage("image/webp", webp(0x12))).toBe(true);
+    expect(isAnimatedImage("image/webp", webp(0x10))).toBe(false);
+    expect(isAnimatedImage("image/png", url("image/png", Buffer.from("xxxxIHDRxxacTLxxIDAT")))).toBe(true);
+    expect(isAnimatedImage("image/png", url("image/png", Buffer.from("xxxxIHDRxxIDATxxacTL")))).toBe(false);
+  });
+
+  const el = (id, type, x, extra = {}) => ({ id, type, x, y: 0, width: 100, height: 100, angle: 0, ...extra });
+  const run = (els, opts = {}) =>
+    layoutMedia(els, { kindOf: (e) => (e.id.startsWith("gif") ? "gif" : null), view: { x1: 0, y1: 0, x2: 1000, y2: 1000 }, zoom: 1, ...opts });
+  it("위에 겹친 요소만 다시 그린다", () => {
+    const text = el("t", "text", 20, { containerId: "box" });
+    const items = run([el("below", "rectangle", 0), el("gif1", "image", 0), el("box", "rectangle", 20, { boundElements: [{ type: "text", id: "t" }] }), text, el("far", "rectangle", 500), el("f", "frame", 0)]);
+    expect(items.length).toBe(1);
+    expect(items[0].covers.map((c) => c.map((e) => e.id))).toEqual([["box", "t"]]);
+  });
+  it("위에 겹친 정지 이미지는 함께 얹고, 안 겹친 이미지는 두고 온다", () => {
+    const items = run([el("img0", "image", 0), el("gif1", "image", 0), el("img1", "image", 50), el("img2", "image", 600)]);
+    expect(items.map((i) => [i.el.id, i.kind])).toEqual([["gif1", "gif"], ["img1", "still"]]);
+  });
+  it("화면 밖이거나 너무 작거나 빼 달라고 한 것은 얹지 않는다", () => {
+    expect(run([el("gif1", "image", 5000)]).length).toBe(0);
+    expect(run([el("gif1", "image", 0)], { zoom: 0.05 }).length).toBe(0);
+    expect(run([el("gif1", "image", 0)], { skip: new Set(["gif1"]) }).length).toBe(0);
+  });
+  it("잘라낸 이미지의 원본 자리", () => {
+    expect(cropBox({ width: 100, height: 50, crop: { x: 20, y: 10, width: 200, height: 100, naturalWidth: 400, naturalHeight: 200 } })).toEqual({ left: -10, top: -5, width: 200, height: 100 });
   });
 });

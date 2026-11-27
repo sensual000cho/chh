@@ -11,7 +11,10 @@ import ZoomBadge from "./ZoomBadge.jsx";
 import { arrangeItems } from "./arrange.js";
 import { createNote, finishNote, fitFrames, wrapInGroup } from "./notes.js";
 import { formatAccelerator } from "./accelerator.js";
-import { collectImages, fileMime, insertImages, isImageFile, readAsDataURL, viewCenter } from "./images.js";
+import MediaLayer from "./MediaLayer.jsx";
+import { collectImages, viewCenter } from "./images.js";
+import { insertFiles } from "./insertMedia.js";
+import { isMediaFile } from "./videos.js";
 import { BG_PRESETS } from "./color.js";
 import { clearRecent, formatWhen } from "./recentFiles.js";
 import { chh } from "./chh.js";
@@ -165,11 +168,9 @@ export default function App() {
 
   // ---- 이미지 ----
   const importPicked = useCallback(async (fileList) => {
-    const files = [...fileList].filter(isImageFile);
+    const files = [...fileList].filter(isMediaFile);
     if (!files.length || !apiRef.current) return;
-    const sources = [];
-    for (const f of files) sources.push({ dataURL: await readAsDataURL(f), mime: fileMime(f) });
-    insertImages(apiRef.current, sources, viewCenter(apiRef.current), "center");
+    await insertFiles(apiRef.current, files, viewCenter(apiRef.current), "center");
   }, []);
 
   const exportReferenceImages = useCallback(async () => {
@@ -303,7 +304,7 @@ export default function App() {
               <MainMenu.DefaultItems.Export />
             </>
           )}
-          <MainMenu.Item onSelect={() => fileInputRef.current?.click()}>이미지 가져오기</MainMenu.Item>
+          <MainMenu.Item onSelect={() => fileInputRef.current?.click()}>이미지 · 영상 가져오기</MainMenu.Item>
           <MainMenu.Item onSelect={noteAtCenter} shortcut="N">
             새 메모
           </MainMenu.Item>
@@ -397,6 +398,7 @@ export default function App() {
         </MainMenu>
       </Excalidraw>
       <ZoomBadge api={api} />
+      {api && <MediaLayer api={api} />}
       {helpOpen && (
         <HelpDialog
           desktop={!!chh}
@@ -423,7 +425,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*,.mkv"
         multiple
         hidden
         onChange={(e) => {

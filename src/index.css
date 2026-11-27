@@ -473,3 +473,143 @@ button.cp-slot:hover { filter: brightness(1.15); }
 
 /* Excalidraw 도움말: 외부 링크(설명서·블로그·문제 제보·YouTube) 숨김 */
 .HelpDialog__header { display: none !important; }
+
+/* ---- 움직이는 GIF · 영상 (MediaLayer.jsx) ---- */
+.excalidraw .media-host {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.excalidraw .media-pictures {
+  z-index: 1; /* 캔버스 위, 선택 테두리(2) 아래 */
+}
+.excalidraw .media-controls {
+  z-index: 3; /* 선택 테두리 위, 앱 UI(4) 아래 */
+}
+/* 지금 그리고 있는 선이 GIF·영상에 가려지지 않도록 그 위로 올린다 */
+.excalidraw canvas.excalidraw__canvas:not(.static):not(.interactive) {
+  z-index: 2;
+  pointer-events: none;
+}
+.media-clip,
+.media-box,
+.media-covers,
+.media-cover,
+.media-ctl {
+  position: absolute;
+}
+.media-box,
+.media-fill {
+  overflow: hidden;
+}
+.media-fill {
+  position: absolute;
+  inset: 0;
+}
+.media-fill > * {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+}
+.media-cover > svg {
+  display: block;
+}
+.media-big {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(var(--media-inv));
+}
+.media-big:hover {
+  background: rgba(105, 80, 200, 0.9);
+}
+.media-big svg {
+  width: 30px;
+  height: 30px;
+  fill: currentColor;
+  vertical-align: middle;
+}
+.media-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: calc(100% * var(--media-zoom));
+  height: 34px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.66);
+  color: #fff;
+  font: 12px "Segoe UI", "Malgun Gothic", sans-serif;
+  pointer-events: auto;
+  transform-origin: 0 100%;
+  transform: scale(var(--media-inv));
+}
+.media-bar button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+}
+.media-bar button:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.media-bar svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  vertical-align: middle;
+}
+.media-seek {
+  flex: 1;
+  min-width: 20px;
+  height: 14px;
+  cursor: pointer;
+  background: linear-gradient(rgba(255, 255, 255, 0.28) 0 0) center / 100% 4px no-repeat;
+}
+.media-seek-fill {
+  height: 100%;
+  background: linear-gradient(#b9a4ff 0 0) center / 100% 4px no-repeat;
+}
+.media-time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.media-aside .media-big,
+.media-aside .media-bar {
+  pointer-events: none;
+}
+.media-error {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max-content;
+  max-width: calc(90% * var(--media-zoom));
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #ffb4b4;
+  font: 12px "Segoe UI", "Malgun Gothic", sans-serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: center;
+  transform: translate(-50%, -50%) scale(var(--media-inv));
+}

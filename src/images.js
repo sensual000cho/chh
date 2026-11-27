@@ -70,13 +70,13 @@ export async function toPngDataURL(dataURL) {
   return c.toDataURL("image/png");
 }
 
-// sources: [{ dataURL, mime?, link? }] (link: 출처 주소)  /  anchor: { x, y } 장면 좌표
+// sources: [{ dataURL, mime?, link?, customData? }] (link: 출처 주소, customData: 영상 정보)  /  anchor: { x, y } 장면 좌표
 // mode "center": 묶음의 중앙이 anchor, "corner": 묶음의 왼쪽 위가 anchor
 export async function insertImages(api, sources, anchor, mode = "center") {
   const prepared = [];
   for (const s of sources) {
     try {
-      prepared.push({ ...(await prepare(s.dataURL, s.mime)), link: s.link || null });
+      prepared.push({ ...(await prepare(s.dataURL, s.mime)), link: s.link || null, customData: s.customData });
     } catch {
       /* 읽을 수 없는 파일은 건너뛴다 */
     }
@@ -130,6 +130,7 @@ export async function insertImages(api, sources, anchor, mode = "center") {
       width: w,
       height: h,
       link: p.link,
+      ...(p.customData && { customData: p.customData }),
     })),
   );
   api.updateScene({
@@ -148,15 +149,21 @@ export function viewCenter(api) {
   );
 }
 
-// 드롭된 DataTransfer 에서 가져올 것을 뽑는다: { files: File[], web: { image, link } | null }
+// 드롭된 DataTransfer 에서 가져올 것을 뽑는다: { files: File[], web: { image, link } | null } (files 는 종류를 가리지 않는다)
 // 브라우저가 이미지를 파일로 넘겨줘도 출처 주소를 함께 읽는다.
 export function pickDropped(dt) {
-  const files = [...(dt?.files || [])].filter(isImageFile);
+  const files = [...(dt?.files || [])];
   const web = parseDroppedLinks(dt?.getData("text/html"), dt?.getData("text/uri-list"));
   return { files, web };
 }
 
-// 레퍼런스 이미지 폴더 저장용 목록 (원본 그대로)
+const EXT_OF = { "svg+xml": "svg", jpeg: "jpg", quicktime: "mov", "x-matroska": "mkv", ogg: "ogv", "x-m4v": "m4v" };
+const extOf = (mime) => {
+  const sub = (mime || "").split("/")[1] || "png";
+  return EXT_OF[sub] || sub;
+};
+
+// 레퍼런스 이미지 폴더 저장용 목록 (원본 그대로). 보드에 담긴 영상은 영상 파일로 저장한다.
 export function collectImages(api) {
   const files = api.getFiles();
   const seen = new Set();
@@ -166,8 +173,10 @@ export function collectImages(api) {
     const f = files[el.fileId];
     if (!f) continue;
     seen.add(el.fileId);
-    const ext = (f.mimeType.split("/")[1] || "png").replace("svg+xml", "svg").replace("jpeg", "jpg");
-    out.push({ name: `image_${String(out.length + 1).padStart(3, "0")}.${ext}`, dataURL: f.dataURL });
+    const video = el.customData?.video?.data;
+    const dataURL = video || f.dataURL;
+    const ext = extOf(video ? mimeOfDataURL(video) : f.mimeType);
+    out.push({ name: `${video ? "video" : "image"}_${String(out.length + 1).padStart(3, "0")}.${ext}`, dataURL });
   }
   return out;
 }

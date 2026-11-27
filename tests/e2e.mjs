@@ -1,6 +1,7 @@
 // 실제 Electron 앱을 임시 사용자 폴더로 띄워 저장·복원·종료 동작을 확인한다. (npm run test:e2e, 먼저 npm run build)
 // 사용: node tests/e2e.mjs [큰 보드 파일 경로]
 // 기본은 조용한 실행이다: 창을 화면 밖에 띄우고 포커스·클립보드·전역 단축키를 건드리지 않는다.
+// E2E_NET=1 을 주면 실제 유튜브 재생까지 본다.
 // E2E_FULL=1 을 주면 화면 캡처, 클립보드, 창 복원처럼 실제 화면을 쓰는 점검까지 한다 (작업 중에는 쓰지 마세요).
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -49,6 +50,48 @@ const prelude = `
     api.updateScene({ elements: [...api.getSceneElementsIncludingDeleted(), { ...${JSON.stringify(rect("__I", 1))}, id, type: "image", fileId: "f" + id, status: "saved", scale: [1, 1], crop: null, width: 40, height: 40 }] });
   };
   const key = (k, extra = {}) => window.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true, ...extra }));
+`;
+
+// 영상 점검에서 쓰는 도우미: 두 장면짜리 GIF, 짧은 mp4, 끌어다 놓기 흉내
+const clip = fs.readFileSync(path.join(root, "tests", "fixtures", "clip.mp4"));
+const mediaHelpers = `
+  const until = async (fn, ms = 8000) => {
+    for (let t = 0; t < ms; t += 100) {
+      if (fn()) return true;
+      await wait(100);
+    }
+    return false;
+  };
+  const box = () => document.querySelector(".media-box");
+  const gifFile = () => {
+    // 40x40, 한 장면은 빨강, 한 장면은 파랑 (압축하지 않은 LZW)
+    const n = 40;
+    const frame = (color) => {
+      let bits = [];
+      const put = (code) => { for (let i = 0; i < 3; i++) bits.push((code >> i) & 1); };
+      for (let i = 0; i < n * n; i++) {
+        if (i % 2 === 0) put(4);
+        put(color);
+      }
+      put(5);
+      const bytes = [];
+      for (let i = 0; i < bits.length; i += 8) bytes.push(bits.slice(i, i + 8).reduce((a, b, k) => a | (b << k), 0));
+      const out = [0x21, 0xf9, 4, 0, 10, 0, 0, 0, 0x2c, 0, 0, 0, 0, n, 0, n, 0, 0, 2];
+      for (let i = 0; i < bytes.length; i += 255) { const c = bytes.slice(i, i + 255); out.push(c.length, ...c); }
+      out.push(0);
+      return out;
+    };
+    const head = [...new TextEncoder().encode("GIF89a"), n, 0, n, 0, 0x91, 0, 0, 255, 0, 0, 0, 0, 255, 0, 255, 0, 255, 255, 255];
+    const loop = [0x21, 0xff, 11, ...new TextEncoder().encode("NETSCAPE2.0"), 3, 1, 0, 0, 0];
+    return new File([new Uint8Array([...head, ...loop, ...frame(0), ...frame(1), 0x3b])], "움짤.gif", { type: "image/gif" });
+  };
+  const clipFile = () => new File([Uint8Array.from(atob("${clip.toString("base64")}"), (c) => c.charCodeAt(0))], "영상.mp4", { type: "video/mp4" });
+  const drop = (files, x, y, uri) => {
+    const dt = new DataTransfer();
+    files.forEach((f) => dt.items.add(f));
+    if (uri) dt.setData("text/uri-list", uri);
+    document.querySelector("canvas.interactive").dispatchEvent(new DragEvent("drop", { dataTransfer: dt, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+  };
 `;
 
 // app 실행 → eval 결과를 돌려준다. eval 이 끝나면 앱이 스스로 종료한다.
@@ -571,6 +614,185 @@ async function main() {
   check("이미지 주소가 출처가 된다", r.result?.b?.length === 2 && r.result.b[1] === `${host4}/guarded.png`, JSON.stringify(seen));
   check("파일로 넘어와도 출처가 남는다", r.result?.c?.[2] === "http://site.test/from-google");
   check("주소를 알 수 없으면 출처 없이 넣고 알려 준다", r.result?.d?.length === 4 && !r.result.d[3] && (r.result?.toast || "").includes("출처"), r.result?.toast);
+
+  // 9. 움직이는 GIF, 영상, 영상 주소
+  console.log("\n[9] GIF, 영상, 영상 주소");
+  dir = profile("p20");
+  const mediaFile = path.join(work, "영상 보드.chh");
+  fs.writeFileSync(mediaFile, board());
+  r = await launch({
+    userData: dir,
+    args: [mediaFile],
+    timeout: 90000,
+    script: `
+      ${mediaHelpers}
+      // GIF 를 끌어다 놓으면 움직이는 그림이 얹히고, 캔버스의 정지 그림은 빠진다
+      drop([gifFile()], 300, 200);
+      await until(() => box() && getComputedStyle(box()).visibility === "visible");
+      const gifEl = api.getSceneElements()[0];
+      const gif = { type: gifEl.type, w: gifEl.width, img: !!box()?.querySelector("img"), live: globalThis.__chhLive.has(gifEl.id) };
+      // 위에 그린 선은 그 영역 안에서 다시 그려진다
+      addRect("onTop");
+      const at = { x: gifEl.x + 5, y: gifEl.y + 5 };
+      api.updateScene({ elements: api.getSceneElements().map((e) => (e.id === "onTop" ? { ...e, ...at, version: 2, versionNonce: 7 } : e)) });
+      gif.cover = await until(() => box()?.querySelector(".media-cover svg"));
+      // 화면 밖으로 나가면 내린다
+      const s = api.getAppState();
+      api.updateScene({ appState: { scrollX: s.scrollX + 20000 } });
+      gif.culled = await until(() => !box() && !globalThis.__chhLive.size);
+      api.updateScene({ appState: { scrollX: s.scrollX } });
+      gif.back = await until(() => box() && getComputedStyle(box()).visibility === "visible");
+
+      // 짧은 영상
+      drop([clipFile()], 600, 400);
+      await until(() => api.getSceneElements().some((e) => e.customData?.video));
+      const vid = api.getSceneElements().find((e) => e.customData?.video);
+      const video = { data: vid?.customData.video.data?.slice(0, 11), w: vid?.width, h: vid?.height };
+      video.button = await until(() => document.querySelector(".media-big"));
+      video.before = !!document.querySelector(".media-box video");
+      document.querySelector(".media-big").click();
+      const node = () => document.querySelector(".media-box video");
+      video.plays = await until(() => node() && !node().paused && node().currentTime > 0.05);
+      video.muted = node()?.muted;
+      video.noButton = !document.querySelector(".media-big");
+      // 막대: 마우스를 올리면 나타난다
+      const canvas = document.querySelector("canvas.interactive");
+      const st = api.getAppState();
+      const z = st.zoom.value;
+      canvas.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: (vid.x + vid.width / 2 + st.scrollX) * z + st.offsetLeft, clientY: (vid.y + vid.height / 2 + st.scrollY) * z + st.offsetTop }));
+      video.bar = await until(() => document.querySelector(".media-bar"));
+      document.querySelector('.media-bar [title="소리 켜기"]')?.click();
+      video.unmuted = await until(() => node() && !node().muted);
+      document.querySelector('.media-bar [title="일시 정지"]')?.click();
+      video.paused = await until(() => node()?.paused);
+      video.again = await until(() => document.querySelector(".media-big"));
+
+      // 재생 버튼 위에 커서가 있어도 휠 확대와 붙여넣기가 된다
+      const b = document.querySelector(".media-big").getBoundingClientRect();
+      const [bx, by] = [b.x + b.width / 2, b.y + b.height / 2];
+      document.querySelector(".excalidraw").focus();
+      for (const d of [2, 0]) await window.chh.testCdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: bx + d, y: by });
+      await wait(150);
+      const overButton = !!document.elementFromPoint(bx, by).closest(".media-ctl");
+      const copy = new DataTransfer();
+      copy.setData("text/plain", JSON.stringify({ type: "excalidraw/clipboard", elements: [vid], files: api.getFiles() }));
+      document.dispatchEvent(new ClipboardEvent("paste", { clipboardData: copy, bubbles: true, cancelable: true }));
+      video.pasted = overButton && (await until(() => api.getSceneElements().filter((e) => e.customData?.video?.data).length === 2));
+      api.updateScene({ elements: api.getSceneElements().slice(0, -1) });
+      const zoom0 = api.getAppState().zoom.value;
+      await window.chh.testCdp("Input.dispatchMouseEvent", { type: "mouseWheel", x: bx, y: by, deltaX: 0, deltaY: -100, modifiers: 2 });
+      video.wheel = await until(() => api.getAppState().zoom.value > zoom0);
+
+      // 영상이 아닌 파일은 알리고 넣지 않는다
+      const n = api.getSceneElements().length;
+      drop([new File([new Uint8Array(50)], "깨진.mp4", { type: "video/mp4" })], 300, 300);
+      const broken = await until(() => document.querySelector(".Toast")?.innerText.includes("깨진.mp4"));
+      const same = api.getSceneElements().length === n;
+
+      // 유튜브 주소를 끌어다 놓으면 재생 카드
+      drop([], 300, 500, "https://youtu.be/aqz-KE-bpKQ?t=1m5s");
+      await until(() => api.getSceneElements().some((e) => e.type === "embeddable"));
+      const emb = api.getSceneElements().find((e) => e.type === "embeddable");
+      const frame = await until(() => document.querySelector("iframe.excalidraw__embeddable"));
+      const youtube = { link: emb?.link, w: emb?.width, src: document.querySelector("iframe.excalidraw__embeddable")?.src };
+      key("s", { ctrlKey: true });
+      await wait(1200);
+      return { gif, video, broken, same, youtube, frame, title: document.title };`,
+  });
+  const m = r.result || {};
+  check("GIF 를 놓으면 움직이는 그림이 얹힌다", m.gif?.img && m.gif?.live, JSON.stringify(m.gif));
+  check("GIF 위의 선이 가려지지 않게 다시 그려진다", m.gif?.cover);
+  check("화면 밖의 GIF 는 내리고, 돌아오면 다시 얹는다", m.gif?.culled && m.gif?.back);
+  check("짧은 영상이 보드에 담긴다", m.video?.data === "data:video/", JSON.stringify(m.video));
+  check("영상은 누르기 전에는 불러오지 않고, 누르면 음소거로 재생된다", m.video?.before === false && m.video?.plays && m.video?.muted && m.video?.noButton);
+  check("조작 막대로 소리와 일시 정지를 바꾼다", m.video?.bar && m.video?.unmuted && m.video?.paused && m.video?.again);
+  check("재생 버튼 위에서도 붙여넣기와 휠 확대가 된다", m.video?.pasted && m.video?.wheel);
+  check("재생할 수 없는 파일은 알리고 넣지 않는다", m.broken && m.same);
+  check("유튜브 주소가 재생 카드로 들어온다", m.youtube?.link === "https://www.youtube.com/watch?v=aqz-KE-bpKQ&t=65" && m.frame, JSON.stringify(m.youtube));
+  check("영상이 있는 보드도 저장된다", m.title && !m.title.includes("•"), m.title);
+
+  r = await launch({
+    userData: dir,
+    args: [mediaFile],
+    script: `
+      ${mediaHelpers}
+      const video = api.getSceneElements().find((e) => e.customData?.video);
+      const visible = await until(() => [...document.querySelectorAll(".media-box img")].length === 1);
+      await until(() => document.querySelector(".media-big"));
+      document.querySelector(".media-big")?.click();
+      const plays = await until(() => { const v = document.querySelector(".media-box video"); return v && v.currentTime > 0.05; });
+      // 보드 파일에 적힌 위험한 경로(네트워크, file: 주소)는 열지 않는다
+      const bad = (id, v) => ({ ...video, id, x: video.x + 2000, customData: { video: v }, version: 1 });
+      const before = document.querySelectorAll("video").length;
+      api.updateScene({ elements: [bad("unc", { id: "a", path: "\\\\\\\\server\\\\share\\\\a.mp4" })] });
+      api.scrollToContent(undefined, { fitToContent: true });
+      await wait(400);
+      document.querySelector(".media-big")?.click();
+      const refused = await until(() => document.querySelector(".media-error"));
+      return { plays, visible, refused, any: document.querySelectorAll(".media-box video").length, title: document.title, n: api.getSceneElements().length };`,
+  });
+  check("다시 열어도 GIF 와 영상이 재생된다", r.result?.visible && r.result?.plays, JSON.stringify(r.result));
+  check("네트워크 경로의 영상은 열지 않는다", r.result?.refused && r.result?.any === 0);
+
+  // 큰 영상은 원본 파일에 연결한다 (저장된 연결을 여는 쪽만 확인)
+  if (m.video?.data) {
+    const saved = readJson(mediaFile).elements.find((e) => e.customData?.video);
+    const linkedFile = path.join(work, "연결 영상 #1.mp4");
+    fs.writeFileSync(linkedFile, clip);
+    const linkedBoard = path.join(work, "연결.chh");
+    const link = (id, x, p) => ({ ...saved, id, x, customData: { video: { id, path: p } } });
+    fs.writeFileSync(linkedBoard, board(link("ok", 0, linkedFile), link("gone", 1000, path.join(work, "없는 영상.mp4"))));
+    r = await launch({
+      userData: profile("p21"),
+      args: [linkedBoard],
+      script: `
+        ${mediaHelpers}
+        await until(() => document.querySelectorAll(".media-big").length === 2);
+        document.querySelectorAll(".media-big").forEach((b) => b.click());
+        const plays = await until(() => { const v = document.querySelector(".media-box video"); return v && v.currentTime > 0.05; });
+        const error = await until(() => document.querySelector(".media-error"));
+        return { plays, error, text: document.querySelector(".media-error")?.innerText };`,
+    });
+    check("원본 파일에 연결한 영상이 재생된다", r.result?.plays, JSON.stringify(r.result));
+    check("원본이 없으면 알려 준다", r.result?.error && r.result?.text.includes("없는 영상"));
+
+    // 영상 파일 주소
+    const server3 = http.createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "video/mp4", "content-length": clip.length });
+      res.end(clip);
+    });
+    await new Promise((res) => server3.listen(0, "127.0.0.1", res));
+    const videoUrl = `http://127.0.0.1:${server3.address().port}/clip.mp4?x=1`;
+    r = await launch({
+      userData: profile("p22"),
+      script: `
+        ${mediaHelpers}
+        drop([], 400, 300, ${JSON.stringify(videoUrl)});
+        await until(() => api.getSceneElements().length);
+        const el = api.getSceneElements()[0];
+        await until(() => document.querySelector(".media-big"));
+        document.querySelector(".media-big")?.click();
+        const plays = await until(() => { const v = document.querySelector(".media-box video"); return v && v.currentTime > 0.05; });
+        return { plays, url: el?.customData?.video?.url, link: el?.link };`,
+    });
+    server3.close();
+    check("영상 파일 주소를 놓으면 재생된다", r.result?.plays && r.result?.url === videoUrl, JSON.stringify(r.result));
+  }
+
+  if (process.env.E2E_NET === "1") {
+    // 실제 유튜브에 접속해 오류 153 없이 열리는지 본다
+    r = await launch({
+      userData: profile("p23"),
+      script: `
+        ${mediaHelpers}
+        drop([], 400, 300, "https://www.youtube.com/watch?v=aqz-KE-bpKQ");
+        await until(() => document.querySelector("iframe.excalidraw__embeddable"));
+        await wait(5000);
+        return { ok: true, frames: (await window.chh.testFrames()).filter((f) => f.url.includes("youtube")) };`,
+    });
+    const yt = r.result?.frames?.[0];
+    check("유튜브가 오류 없이 열린다", !!yt && !yt.text.includes("153") && yt.video, JSON.stringify(r.result));
+  }
 
   // 9. 실제 큰 보드 (선택)
   const big = process.argv[2];
