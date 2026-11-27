@@ -35,6 +35,21 @@ function loadBg() {
   return BG_PRESETS[1].color;
 }
 
+// 처음 쓰는 사람에게만 도움말을 한 번 띄운다. 띄우는 순간 기록해서 다음부터는 뜨지 않는다.
+const HELP_SEEN_KEY = "chh.helpSeen";
+function firstRunHelp() {
+  if (window.chh?.testMode) return false; // 자동 점검은 깨끗한 프로필로 켜지므로 건너뛴다
+  try {
+    if (localStorage.getItem(HELP_SEEN_KEY)) return false;
+    localStorage.setItem(HELP_SEEN_KEY, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+// 모듈을 읽을 때 한 번만 판단한다 (StrictMode 가 초기값 함수를 두 번 불러도 결과가 바뀌지 않게)
+const SHOW_HELP_ON_START = firstRunHelp();
+
 export default function App() {
   const [api, setApi] = useState(null);
   const apiRef = useRef(null);
@@ -48,7 +63,7 @@ export default function App() {
   elPickerRef.current = elPicker;
   const [uiHidden, setUiHidden] = useState(false); // Tab: 모든 UI 숨기기
   const [shortcutOpen, setShortcutOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(SHOW_HELP_ON_START);
   const editorHelpRef = useRef(false); // 앱 도움말에서 "그리기 단축키"를 눌러 연 Excalidraw 도움말인가
   const bodyRef = useRef(null);
   const fileInputRef = useRef(null);
